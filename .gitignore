@@ -1,0 +1,9 @@
+.cache/
+.idea/
+.tox/
+.venv/
+*.egg-info
+*.pyc
+.gitignore.swp
+bats/
+build/
