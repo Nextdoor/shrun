@@ -53,3 +53,16 @@ EOF
     [[ $status = 1 ]]
     [[ "$output" = *"FAILED"* ]]
 }
+
+@test "runs jobs in background when flagged as background" {
+    file=$TEST_DIR/my-test.yml
+    cat > $file <<- EOF
+        - "while [ ! -f $TEST_DIR/done ]; do true; done; echo DONE":
+            background: true
+        - touch $TEST_DIR/done
+EOF
+    run $RUNNER $file
+    [[ $status = 0 ]]
+    [[ "$output" = *"DONE"* ]]
+    [[ "$output" = *"PASSED"* ]]
+}
