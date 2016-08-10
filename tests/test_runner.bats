@@ -12,14 +12,15 @@ _setup_tmp_directory() {
 }
 
 _setup_test_directory() {
-    name=$1
-    declare -g "$name"="$(mktemp -d)"
-    _append_to_exit_trap "rm -rf ${!name}"
+    local name=$1
+    local testdir="$(mktemp -d)"
+    _append_to_exit_trap "rm -rf ${testdir}"
+    declare -g "$name"="$testdir"
 }
 
 _append_to_exit_trap() {
     # Makes sure to run the existing exit handler
-    trap "$1; $(trap -p EXIT | sed -r "s/trap.*?'(.*)' \w+$/\1/")" EXIT
+    trap -- '$1; bats_teardown_trap' EXIT
 }
 
 @test "runs commands listed in a yaml file" {
@@ -29,7 +30,7 @@ _append_to_exit_trap() {
 EOF
     run $RUNNER $file
     [[ $status = 0 ]]
-    [[ "$output" = "Hello" ]]
+    [[ "$output" = *"Hello"* ]]
 }
 
 @test "runs commands that are keys" {
@@ -40,7 +41,7 @@ EOF
 EOF
     run $RUNNER $file
     [[ $status = 0 ]]
-    [[ "$output" = "Hello" ]]
+    [[ "$output" = *"Hello"* ]]
 }
 
 @test "reports errors" {

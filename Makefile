@@ -3,6 +3,8 @@ ifndef TERM
     BATS_FLAGS = -t
 endif
 
+.PHONY: test
+
 test:
 	bats/bin/bats $(BATS_FLAGS) tests/*.bats
 
