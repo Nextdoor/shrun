@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-RUNNER=flaml
+RUNNER=phlaml
 
 setup() {
     _setup_test_directory TEST_DIR

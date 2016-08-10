@@ -1,8 +1,8 @@
-# flaml
+# phlaml
 
-Yaml test runner
+Yaml test flow runner
 
 ## Usage
 
-Run commands flaml <file>.
+Run commands phlaml <file>.  Inspired by CircleCi's circle.yaml files.
 
