@@ -1,0 +1,4 @@
+- echo Goodbye:
+    depends_on: hello
+- echo Hello:
+    name: hello

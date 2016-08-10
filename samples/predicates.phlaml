@@ -1,0 +1,6 @@
+- true:
+    set: skip_it
+- echo Hello:
+    unless: skip_it
+- echo Goodbye:
+    if: skip_it

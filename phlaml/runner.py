@@ -51,8 +51,8 @@ def run_command(name, command, features, tmpdir, args):
 
         def timeout():
             elapsed_time = time.time() - start_time
-            termcolor.cprint('TIMEOUT ({:0.0f})'.format(elapsed_time), 'red')
             process.terminate()
+            termcolor.cprint('TIMEOUT ({:0.0f})'.format(elapsed_time), 'red')
 
         if features.get('timeout') is not None:
             timer = threading.Timer(int(features.get('timeout')), timeout)
@@ -120,8 +120,7 @@ def main(argv=sys.argv):
         results = []
         for index, item in enumerate(items):
             if isinstance(item, dict):
-                command = next(iter(item.keys()))
-                features = next(iter(item.values()))
+                command, features = next(iter(item.items()))
             else:
                 command = item
                 features = {}
