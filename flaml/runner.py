@@ -93,6 +93,7 @@ def main(argv=sys.argv):
                 'red' if process.returncode else 'green')
 
             if process.returncode:
+                failed = True
                 break
 
     if failed:
