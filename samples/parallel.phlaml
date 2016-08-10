@@ -1,4 +1,6 @@
-- echo Goodbye:
-    depends_on: hello
-- echo Hello:
-    name: hello
+- "while [ ! -f first ]; do touch first; done; echo First Done":
+    name: first
+- "[ -f first ] && echo Second Done":
+    depends_on: first
+    background: true
+- touch first && echo Third Done

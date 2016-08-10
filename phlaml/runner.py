@@ -25,6 +25,9 @@ import yaml
 
 from . import version
 
+name_done = {}
+done_event = threading.Condition()
+
 
 def print_lines(lines, prefix, color):
     for line in lines:
@@ -36,31 +39,51 @@ def run_command(name, command, features, tmpdir, args):
     stdout_path = os.path.join(tmpdir, '{}.stdout'.format(name))
     stderr_path = os.path.join(tmpdir, '{}.stderr'.format(name))
 
+    start_time = time.time()
+
+    # Wait for dependencies
+    depends_on = features.get('depends_on', [])
+    if not isinstance(depends_on, list):
+        depends_on = depends_on.split()
+    while any(not name_done[d] for d in depends_on):
+        with done_event:
+            done_event.wait()
+
     if args.verbose:
         termcolor.cprint("Running: {}".format(command), 'green')
 
     with io.open(stdout_path, 'wb') as stdout_writer, \
-        io.open(stdout_path, 'rb') as stdout_reader, \
-        io.open(stderr_path, 'wb') as stderr_writer, \
-        io.open(stderr_path, 'rb') as stderr_reader:
-
-        start_time = time.time()
+            io.open(stdout_path, 'rb') as stdout_reader, \
+            io.open(stderr_path, 'wb') as stderr_writer, \
+            io.open(stderr_path, 'rb') as stderr_reader:
 
         process = subprocess.Popen(command, shell=True, executable=args.shell,
                                    stdout=stdout_writer, stderr=stderr_writer)
 
         def timeout():
-            elapsed_time = time.time() - start_time
             process.terminate()
-            termcolor.cprint('TIMEOUT ({:0.0f})'.format(elapsed_time), 'red')
+            termcolor.cprint('TIMEOUT ({:0.0f})'.format(time.time() - start_time), 'red')
 
-        if features.get('timeout') is not None:
-            timer = threading.Timer(int(features.get('timeout')), timeout)
+        timeout_seconds = features.get('timeout', args.command_timeout)
+
+        timers = [None]
+
+        def start_timer():
+            timer = timers[0]
+            if timer:
+                timer.cancel()
+            timer = threading.Timer(int(timeout_seconds), timeout)
             timer.start()
+            timers[0] = timer
+
+        if timeout_seconds is not None:
+            start_timer()
 
         def print_output():
-            print_lines(stdout_reader.readlines(), '| ', 'green')
-            print_lines(stderr_reader.readlines(), ': ', 'yellow')
+            out = stdout_reader.readlines()
+            err = stderr_reader.readlines()
+            print_lines(out, '| ', 'green')
+            print_lines(err, ': ', 'yellow')
 
         while process.poll() is None:
             print_output()
@@ -68,11 +91,20 @@ def run_command(name, command, features, tmpdir, args):
 
         print_output()
 
+    name = features.get('name')
+
     elapsed_time = time.time() - start_time
-    termcolor.cprint("{} ({:0.1f}s)".format(
+    termcolor.cprint("{} {}({:0.1f}s)".format(
         'FAILED' if process.returncode else 'PASSED',
+        '[{}] '.format(name) if name else '',
         elapsed_time),
         'red' if process.returncode else 'green')
+
+    # Make name as done
+    if name:
+        name_done[name] = True
+        with done_event:
+            done_event.notify_all()
 
     return process.returncode or 0
 
@@ -85,8 +117,8 @@ def main(argv=sys.argv):
     parser.add_argument('--shell', default='/bin/bash')
     parser.add_argument('--workers', default=10, type=int, help="Number of workers.")
     parser.add_argument('--timeout', default=300, type=int, help="Seconds for the entire run.")
-    parser.add_argument('--output-timeout', default=60, type=int,
-                        help="Seconds without output after which a job is considered to have failed.")
+    parser.add_argument('--command-timeout', default=300, type=int, dest='command_timeout',
+                        help="Timeout for every command.")
     parser.add_argument('file')
     args = parser.parse_args(argv[1:])
     if args.version:
@@ -105,8 +137,6 @@ def main(argv=sys.argv):
     pool = ThreadPool(args.workers)
 
     def timeout_handler(signal, frame):
-        pool.close()
-        pool.terminate()
         sys.exit(termcolor.colored("FAILED: Timed out after {} seconds".format(
             args.timeout), 'red'))
 
@@ -125,24 +155,33 @@ def main(argv=sys.argv):
                 command = item
                 features = {}
 
-            name = re.search('\w+', command).group(0)
+            name = features.get('name')
 
-            if name in name_count:
-                name_count[name] += 1
-                name = '{}_{}'.format(name, name_count[name])
+            if name:
+                assert name not in name_done, "name '{}' is already in use".format(name)
+                name_done[name] = False
+                command_name = name
             else:
-                name_count[name] = 0
+                command_name = re.search('\w+', command).group(0)
+                if command_name in name_count:
+                    name_count[command_name] += 1
+                    command_name = '{}_{}'.format(command_name, name_count[command_name])
+                else:
+                    name_count[command_name] = 0
 
             result = pool.apply_async(run_command, (), (lambda **kwargs: kwargs)(
-                name=name, command=command, features=features, tmpdir=tmpdir, args=args))
-
+                name=command_name, command=command, features=features, tmpdir=tmpdir, args=args))
             results.append(result)
-            if not features.get('background'):
+
+            # Wait if command is synchronous
+            if not (features.get('background') or name):
                 result.get()
+
         if not all(r.wait() is None and r.successful() and r.get() == 0 for r in results):
             exit(1)
     finally:
         timer.cancel()
+        pool.terminate()
 
 if __name__ == "__main__":
     main(sys.argv)
