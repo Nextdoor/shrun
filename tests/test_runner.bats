@@ -32,6 +32,17 @@ EOF
     [[ "$output" = "Hello" ]]
 }
 
+@test "runs commands that are keys" {
+    file=$TEST_DIR/my-test.yml
+    cat > $file <<- EOF
+        - echo Hello:
+            background: false
+EOF
+    run $RUNNER $file
+    [[ $status = 0 ]]
+    [[ "$output" = "Hello" ]]
+}
+
 @test "reports errors" {
     file=$TEST_DIR/my-test.yml
     cat > $file <<- EOF
