@@ -8,6 +8,8 @@ from __future__ import print_function
 
 import argparse
 import atexit
+import collections
+import itertools
 import io
 from multiprocessing.pool import ThreadPool
 import os
@@ -19,19 +21,22 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 
 import termcolor
 import yaml
 
 from . import version
 
+COLORS = ['yellow', 'blue', 'red', 'green', 'magenta', 'cyan']
+
 done_event = threading.Condition()
+COLOR_LOCK = threading.Lock()
 
 
 def print_lines(lines, prefix, color):
     for line in lines:
-        termcolor.cprint(prefix, color, end='')
-        print(line, end='')
+        termcolor.cprint(prefix + line, color, end='')
 
 
 def extract_tags(tags):
@@ -41,95 +46,140 @@ def extract_tags(tags):
         return (tags or '').split()
 
 
-def run_command(name, command, features, tmpdir, args, predicates, name_done):
-    stdout_path = os.path.join(tmpdir, '{}.stdout'.format(name))
-    stderr_path = os.path.join(tmpdir, '{}.stderr'.format(name))
+class SharedData(object):
+    def __init__(self):
+        self.colors = collections.OrderedDict((c, 0) for c in COLORS)
+        self.name_counts = {}
+        self.name_done = {}
+        self.predicates = {}
+        self.color_counts = collections.defaultdict(lambda: 0)
 
-    start_time = time.time()
-    set_predicates = extract_tags(features.get('set'))
 
-    # Wait for dependencies
-    depends_on = extract_tags(features.get('depends_on'))
-    while any(not name_done[d] for d in depends_on):
-        with done_event:
-            done_event.wait()
+def run_command(command, features, tmpdir, args, shared_data):
+    try:
+        name = features.get('name')
 
-    if_preds = extract_tags(features.get('if'))
-    unless_preds = extract_tags(features.get('unless'))
+        if name:
+            command_name = name
+        else:
+            command_name = re.search('\w+', command).group(0)
+            if command_name in shared_data.name_counts:
+                shared_data.name_counts[command_name] += 1
+                command_name = '{}_{}'.format(command_name, shared_data.name_counts[command_name])
+            else:
+                shared_data.name_counts[command_name] = 0
 
-    assert not (if_preds and unless_preds), \
-           "phlaml doesn't support mixing 'if' and 'unless' predicates'"
+        stdout_path = os.path.join(tmpdir, '{}.stdout'.format(command_name))
+        stderr_path = os.path.join(tmpdir, '{}.stderr'.format(command_name))
 
-    skip = (if_preds and not any(predicates[p] for p in if_preds) or
-            unless_preds and any(predicates[p] for p in unless_preds))
+        start_time = time.time()
+        set_predicates = extract_tags(features.get('set'))
 
-    termcolor.cprint('{}: {}'.format('Skipping' if skip else 'Running', command),
-                     'blue' if skip else 'green')
+        # Wait for dependencies
+        depends_on = extract_tags(features.get('depends_on'))
+        while any(not shared_data.name_done[d] for d in depends_on):
+            with done_event:
+                done_event.wait()
 
-    if skip:
-        return True
+        if_preds = extract_tags(features.get('if'))
+        unless_preds = extract_tags(features.get('unless'))
 
-    with io.open(stdout_path, 'wb') as stdout_writer, \
-            io.open(stdout_path, 'rb') as stdout_reader, \
-            io.open(stderr_path, 'wb') as stderr_writer, \
-            io.open(stderr_path, 'rb') as stderr_reader:
+        assert not (if_preds and unless_preds), \
+               "phlaml doesn't support mixing 'if' and 'unless' predicates'"
 
-        # See http://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true  # noqa
-        process = subprocess.Popen(command, shell=True, executable=args.shell,
-                                   stdout=stdout_writer, stderr=stderr_writer,
-                                   preexec_fn=os.setsid)
+        skip = (if_preds and not any(shared_data.predicates[p] for p in if_preds) or
+                unless_preds and any(shared_data.predicates[p] for p in unless_preds))
 
-        def timeout():
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            termcolor.cprint('TIMEOUT ({:0.0f})'.format(time.time() - start_time), 'red')
+        def print_command(command, prefix='', color='white', skipped=False):
+            lines = command.split('\n')
+            if skipped:
+                message = 'Skipping: '
+            else:
+                message = 'Started: '
+            if len(lines) > 1:
+                lines = [message] + lines + ['---']
+            else:
+                lines = [message + lines[0]]
+            for line in lines:
+                termcolor.cprint('{}| {}'.format(prefix, line), color=color)
 
-        timeout_seconds = features.get('timeout', args.command_timeout)
-        timers = [None]
+        if skip:
+            print_command(command, skipped=True)
+            return True
 
-        def start_timer():
-            timer = timers[0]
-            if timer:
-                timer.cancel()
-            timer = threading.Timer(int(timeout_seconds), timeout)
-            timer.start()
-            timers[0] = timer
+        with io.open(stdout_path, 'wb') as stdout_writer, \
+                io.open(stdout_path, 'rb') as stdout_reader, \
+                io.open(stderr_path, 'wb') as stderr_writer, \
+                io.open(stderr_path, 'rb') as stderr_reader:
 
-        if timeout_seconds is not None:
-            start_timer()
+            # See http://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true  # noqa
+            process = subprocess.Popen(command, shell=True, executable=args.shell,
+                                       stdout=stdout_writer, stderr=stderr_writer,
+                                       preexec_fn=os.setsid)
 
-        def print_output():
-            out = stdout_reader.readlines()
-            err = stderr_reader.readlines()
-            print_lines(out, '| ', 'green')
-            print_lines(err, ': ', 'yellow')
+            with COLOR_LOCK:
+                # Pick the oldest color, favoring colors not in use
+                color = next(
+                    itertools.chain((c for c, count in shared_data.colors.items() if count == 0),
+                                    shared_data.colors.items()))
+                shared_data.colors[color] = shared_data.colors.pop(color) + 1  # Re-add at the end
 
-        while process.poll() is None:
+            prefix = name or str(process.pid)
+            print_command(command, prefix=prefix, color=color)
+
+            timeout_seconds = features.get('timeout', args.command_timeout)
+            last_output_time = time.time()
+
+            def print_output():
+                out = stdout_reader.readlines()
+                err = stderr_reader.readlines()
+                print_lines(out, '{}| '.format(prefix), color)
+                print_lines(err, '{}: '.format(prefix), color)
+                return bool(out or err)
+
+            while process.poll() is None:
+                saw_output = print_output()
+                current_time = time.time()
+                if (timeout_seconds is not None and
+                            current_time > last_output_time + timeout_seconds):
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                    termcolor.cprint('TIMEOUT', color=color, attrs=['bold'])
+                elif saw_output:
+                    last_output_time = current_time
+
+                time.sleep(0.1)
+
             print_output()
-            time.sleep(0.1)
 
-        print_output()
+        command_name = features.get('name')
 
-    name = features.get('name')
+        passed = not bool(process.returncode)
+        for pred in set_predicates:
+            shared_data.predicates[pred] = passed
 
-    passed = not bool(process.returncode)
-    for pred in set_predicates:
-        predicates[pred] = passed
+        elapsed_time = time.time() - start_time
+        termcolor.cprint('{}| {}'.format(prefix, 'PASSED' if passed else 'FAILED'),
+                         attrs=(None if passed else ['bold']), color=color, end='')
 
-    elapsed_time = time.time() - start_time
-    termcolor.cprint("{} {}{}({:0.1f}s)".format(
-        'PASSED' if passed else 'FAILED',
-        '(ignored) ' if not passed and set_predicates else '',
-        '[{}] '.format(name) if name else '',
-        elapsed_time),
-        'green' if passed else 'red' if not set_predicates else 'cyan')
+        termcolor.cprint(" {}({:0.1f}s)".format(
+                '(ignored) ' if not passed and set_predicates else '',
+            elapsed_time),
+            color=color)
 
-    # Make name as done
-    if name:
-        name_done[name] = True
-        with done_event:
-            done_event.notify_all()
+        # Make name as done
+        if command_name:
+            shared_data.name_done[command_name] = True
+            with done_event:
+                done_event.notify_all()
 
-    return passed
+        return passed
+    except:
+        traceback.print_exc()
+        raise
+    finally:
+        if not skip:
+            with COLOR_LOCK:
+                shared_data.colors[color] -= 1
 
 
 def main(argv=sys.argv):
@@ -165,14 +215,12 @@ def main(argv=sys.argv):
 
     signal.signal(signal.SIGALRM, timeout_handler)
 
+    results = []
+    shared_data = SharedData()
     timer = threading.Timer(args.timeout, os.kill, (os.getpid(), signal.SIGALRM))
     timer.start()
 
     try:
-        name_count = {}
-        name_done = {}
-        predicates = {}
-        results = []
         for index, item in enumerate(items):
             if isinstance(item, dict):
                 command, features = next(iter(item.items()))
@@ -180,29 +228,22 @@ def main(argv=sys.argv):
                 command = item
                 features = {}
 
-            assert isinstance(command, str), "Command '{}' must be a string".format(command)
             name = features.get('name')
-
             if name:
-                assert name not in name_done, "name '{}' is already in use".format(name)
-                name_done[name] = False
-                command_name = name
-            else:
-                command_name = re.search('\w+', command).group(0)
-                if command_name in name_count:
-                    name_count[command_name] += 1
-                    command_name = '{}_{}'.format(command_name, name_count[command_name])
-                else:
-                    name_count[command_name] = 0
+                assert name not in shared_data.name_done, "name '{}' is already in use".format(name)
+                shared_data.name_done[name] = False
+
+            assert isinstance(command, str), "Command '{}' must be a string".format(command)
 
             result = pool.apply_async(run_command, (), (lambda **kwargs: kwargs)(
-                name=command_name, command=command, features=features, tmpdir=tmpdir, args=args,
-                predicates=predicates, name_done=name_done))
+                command=command, features=features, tmpdir=tmpdir, args=args,
+                shared_data=shared_data))
 
             # Wait if command is synchronous
-            if not (features.get('background') or name):
+            if not (features.get('background') or features.get('name')):
                 result.get()
 
+            # Don't wait for processes explicitly marked as background
             if not features.get('background'):
                 results.append(result)
 
@@ -212,6 +253,7 @@ def main(argv=sys.argv):
     finally:
         timer.cancel()
         pool.terminate()
+        pool.join()
 
 if __name__ == "__main__":
     main(sys.argv)
