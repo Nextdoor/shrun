@@ -9,6 +9,8 @@ from __future__ import print_function
 import argparse
 import atexit
 import collections
+import contextlib
+import functools
 import itertools
 import io
 from multiprocessing.pool import ThreadPool
@@ -31,9 +33,6 @@ from . import version
 COLORS = ['yellow', 'blue', 'red', 'green', 'magenta', 'cyan']
 KEYWORDS = ['background', 'depends_on', 'if', 'name', 'set', 'timeout', 'unless']
 
-DONE_EVENT = threading.Condition()
-COLOR_LOCK = threading.Lock()
-
 
 def print_lines(lines, prefix, color):
     for line in lines:
@@ -47,66 +46,112 @@ def extract_tags(tags):
         return (tags or '').split()
 
 
-class SharedData(object):
+class DataManager(object):
     def __init__(self):
-        self.colors = collections.OrderedDict((c, 0) for c in COLORS)
-        self.name_counts = {}
-        self.name_done = {}
-        self.predicates = {}
-        self.color_counts = collections.defaultdict(lambda: 0)
+        self._colors = collections.OrderedDict((c, 0) for c in COLORS)
+        self._name_counts = {}
+        self._name_done = {}
+        self._predicates = {}
+        self._color_counts = collections.defaultdict(lambda: 0)
+        self._color_lock = threading.Lock()
+        self._done_event = threading.Condition()
 
-
-def run_command(command, features, tmpdir, args, shared_data):
-    try:
-        name = features.get('name')
-
+    def create_command_name(self, name, command):
         if name:
             command_name = name
         else:
             command_name = re.search('\w+', command).group(0)
-            if command_name in shared_data.name_counts:
-                shared_data.name_counts[command_name] += 1
-                command_name = '{}_{}'.format(command_name, shared_data.name_counts[command_name])
+            if command_name in self._name_counts:
+                self._name_counts[command_name] += 1
+                command_name = '{}_{}'.format(command_name, self._name_counts[command_name])
             else:
-                shared_data.name_counts[command_name] = 0
+                self._name_counts[command_name] = 0
+        return command_name
 
+    def wait_for_dependencies(self, depends_on):
+        while any(not self._name_done[d] for d in depends_on):
+            with self._done_event:
+                self._done_event.wait()
+
+    def mark_as_done(self, name):
+        if name:
+            self._name_done[name] = True
+            with self._done_event:
+                self._done_event.notify_all()
+
+    @contextlib.contextmanager
+    def checkout_color(self):
+        with self._color_lock:
+            # Pick the oldest color, favoring colors not in use
+            color = next(
+                itertools.chain((c for c, count in self._colors.items() if count == 0),
+                                self._colors.items()))
+            self._colors[color] = self._colors.pop(color) + 1  # Re-add at the end
+
+        try:
+            yield color
+        finally:
+            with self._color_lock:
+                self._colors[color] -= 1
+                
+    def set_predicates(self, passed, predicates):
+        for pred in predicates:
+            self._predicates[pred] = passed
+
+    def should_skip(self, if_preds, unless_preds):
+        assert not (if_preds and unless_preds), \
+            "phlaml doesn't support mixing 'if' and 'unless' predicates'"
+
+        return (if_preds and not any(self._predicates[p] for p in if_preds) or
+                unless_preds and any(self._predicates[p] for p in unless_preds))
+
+
+def print_exceptions(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except:
+            traceback.print_exc()
+            raise
+    return wrapper
+
+
+@print_exceptions
+def run_command(command, features, tmpdir, args, data_manager):
+    start_time = time.time()
+
+    name = features.get('name')
+    command_name = data_manager.create_command_name(name, command)
+
+    # Wait for dependencies
+    data_manager.wait_for_dependencies(extract_tags(features.get('depends_on')))
+
+    if_preds = extract_tags(features.get('if'))
+    unless_preds = extract_tags(features.get('unless'))
+
+    skip = data_manager.should_skip(if_preds, unless_preds)
+
+    def print_command(command, prefix='', color='white', skipped=False):
+        lines = command.split('\n')
+        if skipped:
+            message = 'Skipping: '
+        else:
+            message = 'Started: '
+        if len(lines) > 1:
+            lines = [message] + lines + ['---']
+        else:
+            lines = [message + lines[0]]
+        for line in lines:
+            termcolor.cprint('{}| {}'.format(prefix, line), color=color)
+
+    if skip:
+        print_command(command, skipped=True)
+        return True
+
+    with data_manager.checkout_color() as color:
         stdout_path = os.path.join(tmpdir, '{}.stdout'.format(command_name))
         stderr_path = os.path.join(tmpdir, '{}.stderr'.format(command_name))
-
-        start_time = time.time()
-        set_predicates = extract_tags(features.get('set'))
-
-        # Wait for dependencies
-        depends_on = extract_tags(features.get('depends_on'))
-        while any(not shared_data.name_done[d] for d in depends_on):
-            with DONE_EVENT:
-                DONE_EVENT.wait()
-
-        if_preds = extract_tags(features.get('if'))
-        unless_preds = extract_tags(features.get('unless'))
-
-        assert not (if_preds and unless_preds), \
-               "phlaml doesn't support mixing 'if' and 'unless' predicates'"
-
-        skip = (if_preds and not any(shared_data.predicates[p] for p in if_preds) or
-                unless_preds and any(shared_data.predicates[p] for p in unless_preds))
-
-        def print_command(command, prefix='', color='white', skipped=False):
-            lines = command.split('\n')
-            if skipped:
-                message = 'Skipping: '
-            else:
-                message = 'Started: '
-            if len(lines) > 1:
-                lines = [message] + lines + ['---']
-            else:
-                lines = [message + lines[0]]
-            for line in lines:
-                termcolor.cprint('{}| {}'.format(prefix, line), color=color)
-
-        if skip:
-            print_command(command, skipped=True)
-            return True
 
         with io.open(stdout_path, 'wb') as stdout_writer, \
                 io.open(stdout_path, 'rb') as stdout_reader, \
@@ -117,13 +162,6 @@ def run_command(command, features, tmpdir, args, shared_data):
             process = subprocess.Popen(command, shell=True, executable=args.shell,
                                        stdout=stdout_writer, stderr=stderr_writer,
                                        preexec_fn=os.setsid)
-
-            with COLOR_LOCK:
-                # Pick the oldest color, favoring colors not in use
-                color = next(
-                    itertools.chain((c for c, count in shared_data.colors.items() if count == 0),
-                                    shared_data.colors.items()))
-                shared_data.colors[color] = shared_data.colors.pop(color) + 1  # Re-add at the end
 
             prefix = name or str(process.pid)
             print_command(command, prefix=prefix, color=color)
@@ -152,35 +190,20 @@ def run_command(command, features, tmpdir, args, shared_data):
 
             print_output()
 
-        command_name = features.get('name')
-
+        set_predicates = extract_tags(features.get('set'))
         passed = not bool(process.returncode)
-        for pred in set_predicates:
-            shared_data.predicates[pred] = passed
+        data_manager.set_predicates(passed, set_predicates)
 
         elapsed_time = time.time() - start_time
         termcolor.cprint('{}| {}'.format(prefix, 'PASSED' if passed else 'FAILED'),
                          attrs=(None if passed else ['bold']), color=color, end='')
 
         termcolor.cprint(" {}({:0.1f}s)".format(
-                '(ignored) ' if not passed and set_predicates else '',
-            elapsed_time),
-            color=color)
+            '(ignored) ' if not passed and set_predicates else '', elapsed_time), color=color)
 
-        # Make name as done
-        if command_name:
-            shared_data.name_done[command_name] = True
-            with DONE_EVENT:
-                DONE_EVENT.notify_all()
+        data_manager.mark_as_done(features.get('name'))
 
         return passed
-    except:
-        traceback.print_exc()
-        raise
-    finally:
-        if not skip:
-            with COLOR_LOCK:
-                shared_data.colors[color] -= 1
 
 
 def main(argv=sys.argv):
@@ -217,7 +240,7 @@ def main(argv=sys.argv):
     signal.signal(signal.SIGALRM, timeout_handler)
 
     results = []
-    shared_data = SharedData()
+    data_manager = DataManager()
     timer = threading.Timer(args.timeout, os.kill, (os.getpid(), signal.SIGALRM))
     timer.start()
 
@@ -231,8 +254,8 @@ def main(argv=sys.argv):
 
             name = features.get('name')
             if name:
-                assert name not in shared_data.name_done, "name '{}' is already in use".format(name)
-                shared_data.name_done[name] = False
+                assert name not in data_manager._name_done, "name '{}' is already in use".format(name)
+                data_manager._name_done[name] = False
 
             assert isinstance(command, str), "Command '{}' must be a string".format(command)
 
@@ -241,7 +264,7 @@ def main(argv=sys.argv):
 
             result = pool.apply_async(run_command, (), (lambda **kwargs: kwargs)(
                 command=command, features=features, tmpdir=tmpdir, args=args,
-                shared_data=shared_data))
+                data_manager=data_manager))
 
             # Wait if command is synchronous
             if not (features.get('background') or features.get('name')):
