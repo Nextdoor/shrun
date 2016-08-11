@@ -25,7 +25,6 @@ import yaml
 
 from . import version
 
-name_done = {}
 done_event = threading.Condition()
 
 
@@ -35,37 +34,56 @@ def print_lines(lines, prefix, color):
         print(line, end='')
 
 
-def run_command(name, command, features, tmpdir, args):
+def extract_tags(tags):
+    if isinstance(tags, list):
+        return tags
+    else:
+        return (tags or '').split()
+
+
+def run_command(name, command, features, tmpdir, args, predicates, name_done):
     stdout_path = os.path.join(tmpdir, '{}.stdout'.format(name))
     stderr_path = os.path.join(tmpdir, '{}.stderr'.format(name))
 
     start_time = time.time()
+    set_predicates = extract_tags(features.get('set'))
 
     # Wait for dependencies
-    depends_on = features.get('depends_on', [])
-    if not isinstance(depends_on, list):
-        depends_on = depends_on.split()
+    depends_on = extract_tags(features.get('depends_on'))
     while any(not name_done[d] for d in depends_on):
         with done_event:
             done_event.wait()
 
-    if args.verbose:
-        termcolor.cprint("Running: {}".format(command), 'green')
+    if_preds = extract_tags(features.get('if'))
+    unless_preds = extract_tags(features.get('unless'))
+
+    assert not (if_preds and unless_preds), \
+           "phlaml doesn't support mixing 'if' and 'unless' predicates'"
+
+    skip = (if_preds and not any(predicates[p] for p in if_preds) or
+            unless_preds and any(predicates[p] for p in unless_preds))
+
+    termcolor.cprint('{}: {}'.format('Skipping' if skip else 'Running', command),
+                     'blue' if skip else 'green')
+
+    if skip:
+        return True
 
     with io.open(stdout_path, 'wb') as stdout_writer, \
             io.open(stdout_path, 'rb') as stdout_reader, \
             io.open(stderr_path, 'wb') as stderr_writer, \
             io.open(stderr_path, 'rb') as stderr_reader:
 
+        # See http://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true  # noqa
         process = subprocess.Popen(command, shell=True, executable=args.shell,
-                                   stdout=stdout_writer, stderr=stderr_writer)
+                                   stdout=stdout_writer, stderr=stderr_writer,
+                                   preexec_fn=os.setsid)
 
         def timeout():
-            process.terminate()
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
             termcolor.cprint('TIMEOUT ({:0.0f})'.format(time.time() - start_time), 'red')
 
         timeout_seconds = features.get('timeout', args.command_timeout)
-
         timers = [None]
 
         def start_timer():
@@ -93,12 +111,17 @@ def run_command(name, command, features, tmpdir, args):
 
     name = features.get('name')
 
+    passed = not bool(process.returncode)
+    for pred in set_predicates:
+        predicates[pred] = passed
+
     elapsed_time = time.time() - start_time
-    termcolor.cprint("{} {}({:0.1f}s)".format(
-        'FAILED' if process.returncode else 'PASSED',
+    termcolor.cprint("{} {}{}({:0.1f}s)".format(
+        'PASSED' if passed else 'FAILED',
+        '(ignored) ' if not passed and set_predicates else '',
         '[{}] '.format(name) if name else '',
         elapsed_time),
-        'red' if process.returncode else 'green')
+        'green' if passed else 'red' if not set_predicates else 'cyan')
 
     # Make name as done
     if name:
@@ -106,7 +129,7 @@ def run_command(name, command, features, tmpdir, args):
         with done_event:
             done_event.notify_all()
 
-    return process.returncode or 0
+    return passed
 
 
 def main(argv=sys.argv):
@@ -147,6 +170,8 @@ def main(argv=sys.argv):
 
     try:
         name_count = {}
+        name_done = {}
+        predicates = {}
         results = []
         for index, item in enumerate(items):
             if isinstance(item, dict):
@@ -155,6 +180,7 @@ def main(argv=sys.argv):
                 command = item
                 features = {}
 
+            assert isinstance(command, str), "Command '{}' must be a string".format(command)
             name = features.get('name')
 
             if name:
@@ -170,14 +196,15 @@ def main(argv=sys.argv):
                     name_count[command_name] = 0
 
             result = pool.apply_async(run_command, (), (lambda **kwargs: kwargs)(
-                name=command_name, command=command, features=features, tmpdir=tmpdir, args=args))
+                name=command_name, command=command, features=features, tmpdir=tmpdir, args=args,
+                predicates=predicates, name_done=name_done))
             results.append(result)
 
             # Wait if command is synchronous
             if not (features.get('background') or name):
                 result.get()
 
-        if not all(r.wait() is None and r.successful() and r.get() == 0 for r in results):
+        if not all(r.wait() is None and r.successful() and r.get() for r in results):
             exit(1)
     finally:
         timer.cancel()

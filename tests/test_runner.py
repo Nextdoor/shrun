@@ -123,3 +123,21 @@ def test_multiple_commands_with_same_name_hits_assertion(capfd):
             """, file=f)
     with pytest.raises(AssertionError):
         runner.main(('this-command', f.name))
+
+
+def test_predicates(capfd):
+    """ Assert that names are unique """
+    os.environ['WORD'] = 'word'
+    with open('test.yml', 'w') as f:
+        print("""
+            - "true":
+                set: skip_it
+            - echo Yes skipped $WORD:
+                unless: skip_it
+            - echo Not skipped $WORD:
+                if: skip_it
+            """, file=f)
+    runner.main(('this-command', f.name))
+    out, err = capfd.readouterr()
+    assert "Yes skipped word" not in out
+    assert "Not skipped word" in out

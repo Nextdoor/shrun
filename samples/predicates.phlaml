@@ -1,4 +1,4 @@
-- true:
+- "true":
     set: skip_it
 - echo Hello:
     unless: skip_it
