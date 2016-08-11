@@ -123,7 +123,3 @@ def test_multiple_commands_with_same_name_hits_assertion(capfd):
             """, file=f)
     with pytest.raises(AssertionError):
         runner.main(('this-command', f.name))
-    import sys
-    sys.stdout.flush()
-    sys.stderr.flush()
-    out, err = capfd.readouterr()
