@@ -57,7 +57,7 @@ EOF
 @test "runs jobs in background when flagged as background" {
     file=$TEST_DIR/my-test.yml
     cat > $file <<- EOF
-        - "while [ ! -f $TEST_DIR/done ]; do true; done; echo DONE":
+        - "while [ ! -f $TEST_DIR/done ]; do sleep 0.1; done; echo DONE":
             background: true
         - touch $TEST_DIR/done
 EOF

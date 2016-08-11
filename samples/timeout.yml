@@ -1,2 +1,2 @@
-- "while true; do true; done":
+- sleep 1000:
     timeout: 0
