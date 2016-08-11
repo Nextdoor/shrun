@@ -151,3 +151,14 @@ def test_dont_wait_for_background(capfd):
                 background: true
             """, file=f)
     runner.main(('this-command', f.name))
+
+
+def test_invalid_key(capfd):
+    """ Check that only valid keywords are used """
+    with open('test.yml', 'w') as f:
+        print("""
+            - sleep 10000:
+                backgroundish: true
+            """, file=f)
+    with pytest.raises(AssertionError):
+        runner.main(('this-command', f.name))

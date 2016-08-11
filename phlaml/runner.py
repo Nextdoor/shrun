@@ -29,8 +29,9 @@ import yaml
 from . import version
 
 COLORS = ['yellow', 'blue', 'red', 'green', 'magenta', 'cyan']
+KEYWORDS = ['background', 'depends_on', 'if', 'name', 'set', 'timeout', 'unless']
 
-done_event = threading.Condition()
+DONE_EVENT = threading.Condition()
 COLOR_LOCK = threading.Lock()
 
 
@@ -78,8 +79,8 @@ def run_command(command, features, tmpdir, args, shared_data):
         # Wait for dependencies
         depends_on = extract_tags(features.get('depends_on'))
         while any(not shared_data.name_done[d] for d in depends_on):
-            with done_event:
-                done_event.wait()
+            with DONE_EVENT:
+                DONE_EVENT.wait()
 
         if_preds = extract_tags(features.get('if'))
         unless_preds = extract_tags(features.get('unless'))
@@ -169,8 +170,8 @@ def run_command(command, features, tmpdir, args, shared_data):
         # Make name as done
         if command_name:
             shared_data.name_done[command_name] = True
-            with done_event:
-                done_event.notify_all()
+            with DONE_EVENT:
+                DONE_EVENT.notify_all()
 
         return passed
     except:
@@ -234,6 +235,9 @@ def main(argv=sys.argv):
                 shared_data.name_done[name] = False
 
             assert isinstance(command, str), "Command '{}' must be a string".format(command)
+
+            for key in features.keys():
+                assert key in KEYWORDS, "Unknown keyword '{}'".format(key)
 
             result = pool.apply_async(run_command, (), (lambda **kwargs: kwargs)(
                 command=command, features=features, tmpdir=tmpdir, args=args,
