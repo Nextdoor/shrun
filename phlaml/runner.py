@@ -198,12 +198,15 @@ def main(argv=sys.argv):
             result = pool.apply_async(run_command, (), (lambda **kwargs: kwargs)(
                 name=command_name, command=command, features=features, tmpdir=tmpdir, args=args,
                 predicates=predicates, name_done=name_done))
-            results.append(result)
 
             # Wait if command is synchronous
             if not (features.get('background') or name):
                 result.get()
 
+            if not features.get('background'):
+                results.append(result)
+
+        # Wait for all the threads to complete
         if not all(r.wait() is None and r.successful() and r.get() for r in results):
             exit(1)
     finally:

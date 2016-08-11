@@ -141,3 +141,13 @@ def test_predicates(capfd):
     out, err = capfd.readouterr()
     assert "Yes skipped word" not in out
     assert "Not skipped word" in out
+
+
+def test_dont_wait_for_background(capfd):
+    """ Background jobs are just terminated if they are still running """
+    with open('test.yml', 'w') as f:
+        print("""
+            - sleep 10000:
+                background: true
+            """, file=f)
+    runner.main(('this-command', f.name))
