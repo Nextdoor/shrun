@@ -1,1 +1,1 @@
-- echo bad && exit 1
+- ls blahblahblah

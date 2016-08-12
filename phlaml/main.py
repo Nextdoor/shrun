@@ -42,51 +42,16 @@ def print_exceptions(f):
     return wrapper
 
 
-def main(argv=sys.argv):
-    parser = argparse.ArgumentParser(description="{} script runnner".format(__name__),
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--version', action='store_true', default=False)
-    parser.add_argument('--verbose', '-v', action='store_true', default=True)
-    parser.add_argument('--shell', default='/bin/bash')
-    parser.add_argument('--timeout', default=300, type=int, help="Seconds for the entire run.")
-    parser.add_argument('--output-timeout', default=300, type=int, dest='output_timeout',
-                        help="Timeout for any background job not generating output.")
-    parser.add_argument('file')
-    args = parser.parse_args(argv[1:])
-    if args.version:
-        print(version.VERSION)
-        exit(0)
-
-    with open(args.file, 'r') as f:
-        items = yaml.load(f.read())
-
-    assert type(items) == list, \
-        "Expected top-level object to be a list but got {}".format(type(items))
-
-    tmpdir = tempfile.mkdtemp()
-    atexit.register(shutil.rmtree, tmpdir)
+def run_commands(commands, args, tmpdir, environment):
+    assert type(commands) == list, \
+        "Expected command list to be a list but got {}".format(type(commands))
 
     threads_lock = threading.Lock()
-    shared_context = command.SharedContext()
-    job_runner = runner.Runner(tmpdir=tmpdir, args=args)
+    job_runner = runner.Runner(tmpdir=tmpdir, args=args, environment=environment)
 
     threads = collections.defaultdict(list)
 
-    results = []
-
-    @print_exceptions  # Ensure we see thread exceptions
-    def run_job(job, **kwargs):
-        results.append(job.run(**kwargs))
-
-    def timeout_handler():
-        termcolor.cprint("FAILED: Timed out after {} seconds".format(args.timeout), 'red',
-                         file=sys.stderr)
-        os.kill(os.getpid(), signal.SIGTERM)
-
-    timer = threading.Timer(args.timeout, timeout_handler)
-
     def cleanup():
-        timer.cancel()
         while True:  # Keep killing procs until the threads terminate
             with threads_lock:
                 if any(t.isAlive() for t in itertools.chain(*threads.values())):
@@ -95,16 +60,16 @@ def main(argv=sys.argv):
                 else:
                     return
 
-    def terminate(proc, frame):
-        cleanup()
-        sys.exit("FAILED")
+    results = []
 
-    signal.signal(signal.SIGTERM, terminate)
+    @print_exceptions  # Ensure we see thread exceptions
+    def run_job(job, **kwargs):
+        results.append(job.run(**kwargs))
 
-    timer.start()
+    shared_context = command.SharedContext()
 
     try:
-        for index, item in enumerate(items):
+        for index, item in enumerate(commands):
             if isinstance(item, dict):
                 value, features = next(iter(item.items()))
             else:
@@ -140,13 +105,77 @@ def main(argv=sys.argv):
         for t in threads['normal']:
             t.join()
 
-        if not all(results):
-            sys.exit(termcolor.colored("FAILED", 'red'))
+        return all(results)
 
     except KeyboardInterrupt:
         sys.exit(termcolor.colored("KEYBOARD INTERRUPT", 'red'))
+        return False
+
     finally:
         cleanup()
+
+
+def main(argv=sys.argv):
+    parser = argparse.ArgumentParser(description="{} script runnner".format(__name__),
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--version', action='store_true', default=False)
+    parser.add_argument('--verbose', '-v', action='store_true', default=True)
+    parser.add_argument('--shell', default='/bin/bash')
+    parser.add_argument('--timeout', default=300, type=int, help="Seconds for the entire run.")
+    parser.add_argument('--output-timeout', default=300, type=int, dest='output_timeout',
+                        help="Timeout for any background job not generating output.")
+    parser.add_argument('file')
+    args = parser.parse_args(argv[1:])
+    if args.version:
+        print(version.VERSION)
+        exit(0)
+
+    with open(args.file, 'r') as f:
+        data = yaml.load(f.read())
+
+    if isinstance(data, dict):
+        environment = data.get('environment', {})
+        commands = data.get('main')
+    else:
+        environment = {}
+        commands = data
+
+    environment = {k: os.path.expandvars(v) for k, v in environment.items()}
+
+    tmpdir = tempfile.mkdtemp()
+    atexit.register(shutil.rmtree, tmpdir)
+
+    def timeout_handler():
+        termcolor.cprint("FAILED: Timed out after {} seconds".format(args.timeout), 'red',
+                         file=sys.stderr)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    timer = threading.Timer(args.timeout, timeout_handler)
+
+    def terminate(signum, frame):
+        sys.exit("FAILED")
+
+    signal.signal(signal.SIGTERM, terminate)
+
+    timer.start()
+
+    try:
+        passed = run_commands(commands, args, tmpdir, environment)
+
+        if isinstance(data, dict):
+            post_commands = data.get('post', [])
+        else:
+            post_commands = []
+
+        if post_commands:
+            termcolor.cprint("Running 'post' commands")
+            run_commands(post_commands, args, tmpdir, environment)
+
+        if not passed:
+            sys.exit(termcolor.colored("FAILED", 'red'))
+
+    finally:
+        timer.cancel()
 
 if __name__ == "__main__":
     main(sys.argv)

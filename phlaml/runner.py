@@ -15,7 +15,7 @@ COLORS = ['yellow', 'blue', 'red', 'green', 'magenta', 'cyan']
 
 
 class Runner(object):
-    def __init__(self, tmpdir, args):
+    def __init__(self, tmpdir, args, environment):
         self.tmpdir = tmpdir
         self.args = args
         self._procs_lock = threading.Lock()
@@ -23,6 +23,7 @@ class Runner(object):
         self._output_lock = threading.Lock()
         self._colors = collections.OrderedDict((c, 0) for c in COLORS)
         self._color_lock = threading.Lock()
+        self._environment = environment
         self._name_counts = {}
 
     def kill_all(self):
@@ -34,6 +35,12 @@ class Runner(object):
     def print_lines(lines, prefix, color):
         for line in lines:
             termcolor.cprint(prefix + line, color, end='')
+
+    @property
+    def env(self):
+        env = os.environ.copy()
+        env.update(self._environment)
+        return env
 
     def print_command(self, command, prefix='', color='white', skipped=False):
         with self._output_lock:  # Use a lock to keep output lines separate
@@ -94,7 +101,7 @@ class Runner(object):
 
             # See http://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true  # noqa
             proc = subprocess.Popen(command, shell=True, executable=self.args.shell,
-                                    stdout=stdout_writer, stderr=stderr_writer)
+                                    stdout=stdout_writer, stderr=stderr_writer, env=self.env)
 
             with self._procs_lock:
                 self._procs.append(proc)

@@ -153,7 +153,6 @@ def test_dont_wait_for_background(capfd):
                 background: true
             """, file=f)
     main.main(('this-command', f.name))
-    out, err = capfd.readouterr()
 
 
 def test_invalid_key(capfd):
@@ -165,3 +164,33 @@ def test_invalid_key(capfd):
             """, file=f)
     with pytest.raises(AssertionError):
         main.main(('this-command', f.name))
+
+
+def test_environment(capfd):
+    """ Environment can be set with environment key """
+    os.environ['GOOSE'] = 'goose'
+    with open('test.yml', 'w') as f:
+        print("""
+            environment:
+                GOOSE: $GOOSE
+            main:
+                - echo duck $GOOSE
+            """, file=f)
+    main.main(('this-command', f.name))
+    out, err = capfd.readouterr()
+    assert "duck goose" in out
+
+
+def test_main_and_post(capfd):
+    """ Post is executed even if main fails  """
+    with open('test.yml', 'w') as f:
+        print("""
+            main:
+                - "false"
+            post:
+                - echo Ran ${no:-yes}
+            """, file=f)
+    with pytest.raises(SystemExit):
+        main.main(('this-command', f.name))
+    out, err = capfd.readouterr()
+    assert "Ran yes" in out
