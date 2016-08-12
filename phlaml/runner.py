@@ -42,13 +42,10 @@ class Runner(object):
         env.update(self._environment)
         return env
 
-    def print_command(self, command, prefix='', color='white', skipped=False):
+    def print_command(self, command, prefix='', color='white', message='Running'):
         with self._output_lock:  # Use a lock to keep output lines separate
             lines = command.split('\n')
-            if skipped:
-                message = 'Skipping: '
-            else:
-                message = 'Started: '
+            message += ': '
             if len(lines) > 1:
                 lines = [message] + lines + ['---']
             else:
@@ -84,60 +81,72 @@ class Runner(object):
         return command_name
 
     def _run(self, command, name, start_time, color, skip=False, timeout=None, ignore_status=False,
-             background=False):
+             background=False, retries=0, interval=None):
         if skip:
-            self.print_command(command, skipped=True)
+            self.print_command(command, message='Skipping')
             return True
 
-        command_name = self.create_name(name, command)
+        interval = interval or self.args.retry_interval
 
-        stdout_path = os.path.join(self.tmpdir, '{}.stdout'.format(command_name))
-        stderr_path = os.path.join(self.tmpdir, '{}.stderr'.format(command_name))
+        for attempt in range(0, retries + 1):
+            command_name = self.create_name(name, command)
 
-        with io.open(stdout_path, 'wb') as stdout_writer, \
-            io.open(stdout_path, 'rb') as stdout_reader, \
-            io.open(stderr_path, 'wb') as stderr_writer, \
-            io.open(stderr_path, 'rb') as stderr_reader:
+            stdout_path = os.path.join(self.tmpdir, '{}_{}.stdout'.format(command_name, attempt))
+            stderr_path = os.path.join(self.tmpdir, '{}_{}.stderr'.format(command_name, attempt))
 
-            # See http://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true  # noqa
-            proc = subprocess.Popen(command, shell=True, executable=self.args.shell,
-                                    stdout=stdout_writer, stderr=stderr_writer, env=self.env)
+            with io.open(stdout_path, 'wb') as stdout_writer, \
+                io.open(stdout_path, 'rb') as stdout_reader, \
+                io.open(stderr_path, 'wb') as stderr_writer, \
+                io.open(stderr_path, 'rb') as stderr_reader:
 
-            with self._procs_lock:
-                self._procs.append(proc)
+                # See http://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true  # noqa
+                proc = subprocess.Popen(command, shell=True, executable=self.args.shell,
+                                        stdout=stdout_writer, stderr=stderr_writer, env=self.env)
 
-            prefix = name or str(proc.pid)
-            self.print_command(command, prefix=prefix, color=color)
+                with self._procs_lock:
+                    self._procs.append(proc)
 
-            last_output_time = time.time()
+                prefix = name or str(proc.pid)
+                self.print_command(
+                    command,
+                    message=('Retrying ({})'.format(attempt) if attempt > 0 else 'Running'),
+                    prefix=prefix, color=color)
 
-            def print_output():
-                with self._output_lock:
-                    out = stdout_reader.readlines()
-                    err = stderr_reader.readlines()
-                    self.print_lines(out, '{}| '.format(prefix), color)
-                    self.print_lines(err, '{}: '.format(prefix), color)
-                    return bool(out or err)
+                last_output_time = time.time()
 
-            while proc.poll() is None:
-                saw_output = print_output()
-                current_time = time.time()
-                if (timeout is not None and current_time > last_output_time + timeout and
-                        not background):
-                    proc.kill()
-                    termcolor.cprint('{}! OUTPUT TIMEOUT ({:0.1f}s)'.format(prefix, timeout),
-                                     color, attrs=['bold'])
-                elif saw_output:
-                    last_output_time = current_time
+                def print_output():
+                    with self._output_lock:
+                        out = stdout_reader.readlines()
+                        err = stderr_reader.readlines()
+                        self.print_lines(out, '{}| '.format(prefix), color)
+                        self.print_lines(err, '{}: '.format(prefix), color)
+                        return bool(out or err)
 
-                time.sleep(0.1)
+                while proc.poll() is None:
+                    saw_output = print_output()
+                    current_time = time.time()
+                    if (timeout is not None and current_time > last_output_time + timeout and
+                            not background):
+                        proc.kill()
+                        termcolor.cprint('{}! OUTPUT TIMEOUT ({:0.1f}s)'.format(prefix, timeout),
+                                         color, attrs=['bold'])
+                    elif saw_output:
+                        last_output_time = current_time
 
-            print_output()
+                    time.sleep(0.1)
 
-            with self._procs_lock:
-                self._procs.remove(proc)
+                print_output()
 
-        passed = not bool(proc.returncode)
+                with self._procs_lock:
+                    self._procs.remove(proc)
+
+            passed = not bool(proc.returncode)
+
+            if passed:
+                break
+            elif attempt < retries:
+                termcolor.cprint('{}| Retrying after {}s'.format(prefix, interval), color)
+                time.sleep(interval)
 
         elapsed_time = time.time() - start_time
         termcolor.cprint('{}| {}'.format(prefix, 'PASSED' if passed else 'FAILED'),

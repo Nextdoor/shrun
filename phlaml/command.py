@@ -3,7 +3,8 @@ from __future__ import print_function
 import threading
 import time
 
-KEYWORDS = ['background', 'depends_on', 'if', 'name', 'set', 'timeout', 'unless']
+KEYWORDS = ['background', 'depends_on', 'if', 'name', 'set', 'timeout', 'unless', 'retries',
+            'interval']
 
 
 class SharedContext(object):
@@ -94,7 +95,9 @@ class Job(object):
         passed = runner.run(command=self.command, name=self.name, skip=skip,
                             start_time=start_time, timeout=self.timeout,
                             background=self._features.get('background', False),
-                            ignore_status=bool(set_predicates))
+                            ignore_status=bool(set_predicates),
+                            retries=self._features.get('retries', 0),
+                            interval=self._features.get('interval', None))
 
         shared_context.mark_as_done(self.name)
 

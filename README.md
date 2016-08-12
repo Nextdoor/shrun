@@ -51,4 +51,14 @@ Dependencies can be created between background jobs by giving them a
 ```
 
 Dependencies can be specified as yaml sequences or a single string of
-whitespace delimeted strings.
+whitespace delimited strings.
+
+## Retries
+
+Commands can be retried a given number of times at a given interval:
+
+```
+- "[ -e file ] || { touch file; false; }":
+    interval: 5
+    retries: 1
+```

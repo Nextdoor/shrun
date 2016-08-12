@@ -219,3 +219,15 @@ def test_main_and_post_with_keyboard_interrupt(capfd):
     out, err = capfd.readouterr()
     assert "KEYBOARD INTERRUPT" in err
     assert "Ran yes" in out
+
+
+def test_retries(capfd):
+    """ Retry an event """
+    with open('test.yml', 'w') as f:
+        print("""
+            - "[ -e file ] || { touch file; false; }":
+                retries: 1
+            """, file=f)
+    main.main(('this-command', f.name))
+    out, err = capfd.readouterr()
+    assert "Retrying" in out

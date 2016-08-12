@@ -122,6 +122,7 @@ def main(argv=sys.argv):
     parser.add_argument('--verbose', '-v', action='store_true', default=True)
     parser.add_argument('--shell', default='/bin/bash')
     parser.add_argument('--timeout', default=300, type=int, help="Seconds for the entire run.")
+    parser.add_argument('--retry_interval', default=1, type=int, help="Seconds between retries.")
     parser.add_argument('--output-timeout', default=300, type=int, dest='output_timeout',
                         help="Timeout for any background job not generating output.")
     parser.add_argument('file', nargs='?',
