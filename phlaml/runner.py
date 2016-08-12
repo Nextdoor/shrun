@@ -25,8 +25,10 @@ class Runner(object):
         self._color_lock = threading.Lock()
         self._environment = environment
         self._name_counts = {}
+        self._dead = False
 
     def kill_all(self):
+        self._dead = True
         with self._procs_lock:
             for proc in self._procs:
                 proc.kill()
@@ -142,7 +144,7 @@ class Runner(object):
 
             passed = not bool(proc.returncode)
 
-            if passed:
+            if passed or self._dead:
                 break
             elif attempt < retries:
                 termcolor.cprint('{}| Retrying after {}s'.format(prefix, interval), color)

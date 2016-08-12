@@ -1,2 +1,2 @@
 - sleep 1000:
-    timeout: 0
+    timeout: 2

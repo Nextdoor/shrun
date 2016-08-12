@@ -7,7 +7,6 @@ Runs commands in yaml file
 from __future__ import print_function
 
 import argparse
-import atexit
 import collections
 import functools
 import itertools
@@ -42,24 +41,26 @@ def print_exceptions(f):
     return wrapper
 
 
+# See https://bugs.python.org/issue1167930 for why thread join ignores interrupts
+class InterruptibleThread(threading.Thread):
+    POLL_FREQ = 0.1
+
+    def join(self, timeout=None):
+        start_time = time.time()
+        while not timeout or time.time() - start_time < timeout:
+            super(InterruptibleThread, self).join(timeout or self.POLL_FREQ)
+            if not self.is_alive():
+                return
+        return
+
+
 def run_commands(commands, args, tmpdir, environment):
     assert type(commands) == list, \
         "Expected command list to be a list but got {}".format(type(commands))
 
     threads_lock = threading.Lock()
-    job_runner = runner.Runner(tmpdir=tmpdir, args=args, environment=environment)
-
     threads = collections.defaultdict(list)
-
-    def cleanup():
-        while True:  # Keep killing procs until the threads terminate
-            with threads_lock:
-                if any(t.isAlive() for t in itertools.chain(*threads.values())):
-                    job_runner.kill_all()
-                    time.sleep(0.1)
-                else:
-                    return
-
+    job_runner = runner.Runner(tmpdir=tmpdir, args=args, environment=environment)
     results = []
 
     @print_exceptions  # Ensure we see thread exceptions
@@ -82,7 +83,7 @@ def run_commands(commands, args, tmpdir, environment):
 
             job.prepare(shared_context)
 
-            thread = threading.Thread(
+            thread = InterruptibleThread(
                 target=run_job, args=(job,),
                 kwargs={'runner': job_runner, 'shared_context': shared_context})
             thread.daemon = True  # Ensure this thread doesn't outlive the main thread
@@ -112,7 +113,13 @@ def run_commands(commands, args, tmpdir, environment):
         return False
 
     finally:
-        cleanup()
+        while True:  # Keep killing procs until the threads terminate
+            with threads_lock:
+                if any(t.isAlive() for t in itertools.chain(*threads.values())):
+                    job_runner.kill_all()
+                    time.sleep(0.1)
+                else:
+                    break
 
 
 def main(argv=sys.argv):
@@ -146,23 +153,21 @@ def main(argv=sys.argv):
     environment = {k: os.path.expandvars(v) for k, v in environment.items()}
 
     tmpdir = tempfile.mkdtemp()
-    atexit.register(shutil.rmtree, tmpdir)
 
     def timeout_handler():
         termcolor.cprint("FAILED: Timed out after {} seconds".format(args.timeout), 'red',
                          file=sys.stderr)
         os.kill(os.getpid(), signal.SIGTERM)
 
-    timer = threading.Timer(args.timeout, timeout_handler)
-
     def terminate(signum, frame):
         sys.exit("FAILED")
 
     signal.signal(signal.SIGTERM, terminate)
 
-    timer.start()
+    timer = threading.Timer(args.timeout, timeout_handler)
 
     try:
+        timer.start()
         passed = run_commands(commands, args, tmpdir, environment)
 
         if isinstance(data, dict):
@@ -179,6 +184,7 @@ def main(argv=sys.argv):
 
     finally:
         timer.cancel()
+        shutil.rmtree(tmpdir)
 
 if __name__ == "__main__":
     main(sys.argv)
