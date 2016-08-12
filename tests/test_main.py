@@ -80,8 +80,6 @@ def test_timeout(capfd):
     with pytest.raises(SystemExit) as exc_info:
         main.main(('this-command', '--timeout', '0', f.name))
     assert 'FAILED' in exc_info.value.message
-    out, err = capfd.readouterr()
-    assert 'FAILED' in out
 
 
 def test_command_output_timeout(capfd):
@@ -202,4 +200,22 @@ def test_main_and_post(capfd):
     with pytest.raises(SystemExit):
         main.main(('this-command', f.name))
     out, err = capfd.readouterr()
+    assert "Ran yes" in out
+
+
+def test_main_and_post_with_keyboard_interrupt(capfd):
+    """ Post is executed even if there is a keyboard interrupt in main  """
+    with open('test.yml', 'w') as f:
+        print("""
+            main:
+                - PID=$$; kill -INT $(ps -o ppid= -p $PID)
+                - sleep 10
+            post:
+                - echo Ran ${no:-yes}
+            """, file=f)
+    with pytest.raises(SystemExit) as exc_info:
+        main.main(('this-command', f.name))
+    assert "FAILED" in exc_info.value.message
+    out, err = capfd.readouterr()
+    assert "KEYBOARD INTERRUPT" in err
     assert "Ran yes" in out

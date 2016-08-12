@@ -1,0 +1,5 @@
+main:
+    - PID=$$; kill -INT $(ps -o ppid= -p $PID)
+    - sleep 10
+post:
+    - echo Ran ${no:-yes}

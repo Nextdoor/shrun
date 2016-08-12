@@ -108,7 +108,7 @@ def run_commands(commands, args, tmpdir, environment):
         return all(results)
 
     except KeyboardInterrupt:
-        sys.exit(termcolor.colored("KEYBOARD INTERRUPT", 'red'))
+        termcolor.cprint("KEYBOARD INTERRUPT", 'red', file=sys.stderr)
         return False
 
     finally:
