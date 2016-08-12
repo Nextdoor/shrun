@@ -5,6 +5,7 @@ import os
 import pytest  # flake8: noqa
 
 from phlaml import main
+from phlaml import version
 
 
 @pytest.yield_fixture(autouse=True)
@@ -35,6 +36,14 @@ def test_handles_keys_in_yaml_as_commands(capfd, tmpdir):
     assert 'Hello' in out
     assert 'PASSED' in out
 
+
+def test_version_shows_version(capfd):
+    """ Runs the command """
+    with pytest.raises(SystemExit) as exc_info:
+        main.main(('this-command', '--version'))
+    out, err = capfd.readouterr()
+    assert out == version.VERSION + '\n'
+    assert exc_info.value.code == 0
 
 def test_exits_with_error_on_failure(capfd, tmpdir):
     """ Reports errors """

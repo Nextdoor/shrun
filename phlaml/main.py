@@ -124,7 +124,9 @@ def main(argv=sys.argv):
     parser.add_argument('--timeout', default=300, type=int, help="Seconds for the entire run.")
     parser.add_argument('--output-timeout', default=300, type=int, dest='output_timeout',
                         help="Timeout for any background job not generating output.")
-    parser.add_argument('file')
+    parser.add_argument('file', nargs='?',
+                        help="File to run")
+
     args = parser.parse_args(argv[1:])
     if args.version:
         print(version.VERSION)
