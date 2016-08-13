@@ -14,6 +14,8 @@ setup(
     install_requires=[
         'future>=0.15.2',
         'pyyaml',
+        'six',
+        'termcolor>=1.10.0',
     ],
     tests_require=[
         'pytest',
