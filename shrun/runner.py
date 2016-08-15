@@ -97,9 +97,9 @@ class Runner(object):
             stderr_path = os.path.join(self.tmpdir, '{}_{}.stderr'.format(command_name, attempt))
 
             with io.open(stdout_path, 'wb') as stdout_writer, \
-                io.open(stdout_path, 'rb') as stdout_reader, \
-                io.open(stderr_path, 'wb') as stderr_writer, \
-                io.open(stderr_path, 'rb') as stderr_reader:
+                    io.open(stdout_path, 'rb') as stdout_reader, \
+                    io.open(stderr_path, 'wb') as stderr_writer, \
+                    io.open(stderr_path, 'rb') as stderr_reader:
 
                 # See http://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true  # noqa
                 proc = subprocess.Popen(command, shell=True, executable=self.args.shell,
