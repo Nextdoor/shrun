@@ -4,8 +4,8 @@ import os
 
 import pytest  # flake8: noqa
 
-from phlaml import main
-from phlaml import version
+from shrun import main
+from shrun import version
 
 
 @pytest.yield_fixture(autouse=True)

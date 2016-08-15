@@ -1,14 +1,14 @@
-# phlaml
+# shrun
 
 Yaml test flow runner
 
 ## Usage
 
-Run commands phlaml <file>.  Inspired by CircleCi's circle.yaml files.
+Run commands shrun <file>.  Inspired by CircleCi's circle.yaml files.
 
 ## Format
 
-phlaml expects a yaml file as input, with the top-level being a
+shrun expects a yaml file as input, with the top-level being a
 "sequence."  
 
 Note that in yaml, a number of symbols require quotation marks:

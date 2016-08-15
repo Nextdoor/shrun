@@ -1,5 +1,5 @@
 #!/usr/bin/env python
 
-from phlaml import main
+from shrun import main
 
 main.main()

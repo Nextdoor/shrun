@@ -38,7 +38,7 @@ class SharedContext(object):
     def should_skip(self, if_preds, unless_preds):
         assert not (if_preds
                     and unless_preds), \
-            "phlaml doesn't support mixing 'if' and 'unless' predicates'"
+            "shrun doesn't support mixing 'if' and 'unless' predicates'"
 
         return (if_preds and not any(self._predicates[p] for p in if_preds) or
                 unless_preds and any(self._predicates[p] for p in unless_preds))

@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-RUNNER=phlaml
+RUNNER=shrun
 
 setup() {
     _setup_test_directory TEST_DIR
