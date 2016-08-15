@@ -15,7 +15,7 @@ setup(
         'future>=0.15.2',
         'pyyaml',
         'six',
-        'termcolor>=1.10.0',
+        'termcolor>=1.1.0',
     ],
     tests_require=[
         'pytest',
