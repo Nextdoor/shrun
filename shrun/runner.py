@@ -151,9 +151,15 @@ class Runner(object):
                 time.sleep(interval)
 
         elapsed_time = time.time() - start_time
-        termcolor.cprint('{}| {}'.format(prefix, 'PASSED' if passed else 'FAILED'),
-                         attrs=(None if passed else ['bold']), color=color, end='')
+        if passed:
+            message = 'Done'
+        elif ignore_status:
+            message = 'Failed'
+        else:
+            message = 'FAILED'
 
+        termcolor.cprint('{}| {}'.format(prefix, message), attrs=(None if passed else ['bold']),
+                         color=color, end='')
         termcolor.cprint(" {}({:0.1f}s)".format(
             '(ignored) ' if (not passed and ignore_status) else '', elapsed_time), color=color)
 

@@ -21,7 +21,7 @@ def test_runs_commands_in_a_file(capfd, tmpdir):
     main.main(('this-command', f.name))
     out, err = capfd.readouterr()
     assert 'Hello' in out
-    assert 'PASSED' in out
+    assert 'Done' in out
 
 
 def test_handles_keys_in_yaml_as_commands(capfd, tmpdir):
@@ -34,7 +34,7 @@ def test_handles_keys_in_yaml_as_commands(capfd, tmpdir):
     main.main(('this-command', f.name))
     out, err = capfd.readouterr()
     assert 'Hello' in out
-    assert 'PASSED' in out
+    assert 'Done' in out
 
 
 def test_version_shows_version(capfd):
@@ -70,7 +70,7 @@ def test_runs_job_in_background(capfd):
     main.main(('this-command', 'test.yml'))
     out, err = capfd.readouterr()
     assert 'DONE' in out
-    assert 'PASSED' in out
+    assert 'Done' in out
 
 
 def test_timeout(capfd):

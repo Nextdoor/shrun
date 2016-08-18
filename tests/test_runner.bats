@@ -64,5 +64,5 @@ EOF
     run $RUNNER $file
     [[ $status = 0 ]]
     [[ "$output" = *"DONE"* ]]
-    [[ "$output" = *"PASSED"* ]]
+    [[ "$output" = *"Done"* ]]
 }
