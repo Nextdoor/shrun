@@ -3,9 +3,6 @@ from __future__ import print_function
 import threading
 import time
 
-KEYWORDS = ['background', 'depends_on', 'if', 'name', 'set', 'timeout', 'unless', 'retries',
-            'interval']
-
 
 class SharedContext(object):
     def __init__(self):
@@ -45,28 +42,24 @@ class SharedContext(object):
 
 
 class Job(object):
-    def __init__(self, command, features, output_timeout=None):
+    def __init__(self, command):
         self._command = command
-        self._features = features
-        self._output_timeout = output_timeout
         self._prepared = False
-        for key in self._features.keys():
-            assert key in KEYWORDS, "Unknown keyword '{}'".format(key)
 
     @property
     def name(self):
-        return self._features.get('name')
+        return self.command.features.get('name')
 
     @property
-    def timeout(self):
-        return self._features.get('timeout', self._output_timeout)
+    def background(self):
+        return self.command.features.get('background')
 
     @property
     def command(self):
         return self._command
 
     def tags(self, key):
-        return self.extract_tags(self._features.get(key, []))
+        return self.extract_tags(self.command.features.get(key, []))
 
     @staticmethod
     def extract_tags(tags):
@@ -75,7 +68,8 @@ class Job(object):
         else:
             return (tags or '').split()
 
-    def prepare(self, shared_context):
+    def synchronous_prepare(self, shared_context):
+        """ Do work that should be done before this becomes a separate thread. """
         shared_context.register_name(self.name)
         self._prepared = True
 
@@ -92,12 +86,16 @@ class Job(object):
 
         set_predicates = self.tags('set')
 
-        passed = runner.run(command=self.command, name=self.name, skip=skip,
-                            start_time=start_time, timeout=self.timeout,
-                            background=self._features.get('background', False),
-                            ignore_status=bool(set_predicates),
-                            retries=self._features.get('retries', 0),
-                            interval=self._features.get('interval', None))
+        passed = runner.run(
+            self.command,
+            name=self.name,
+            skip=skip,
+            start_time=start_time,
+            timeout=(self.command.features.get('timeout', runner.output_timeout)),
+            background=self.command.features.get('background', False),
+            ignore_status=bool(set_predicates),
+            retries=self.command.features.get('retries', 0),
+            interval=self.command.features.get('interval', None))
 
         shared_context.mark_as_done(self.name)
 

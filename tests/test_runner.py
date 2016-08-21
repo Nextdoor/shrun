@@ -184,3 +184,14 @@ def test_named_groups(capfd):
     out, err = capfd.readouterr()
     assert "testAA" in out
     assert "testBB" in out
+
+
+def test_loops(capfd):
+    """ Loops are indicated when the first entry of a sequence has key repeat """
+    run_command("""
+        - - repeat: my_group=1,2
+          - echo test{{my_group}}
+        """)
+    out, err = capfd.readouterr()
+    assert "test1" in out
+    assert "test2" in out
