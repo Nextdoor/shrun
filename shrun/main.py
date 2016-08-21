@@ -7,119 +7,19 @@ Runs commands in yaml file
 from __future__ import print_function
 
 import argparse
-import collections
 import functools
-import itertools
 import os
 import shutil
 import signal
 import sys
 import tempfile
-import time
 import threading
-import traceback
 
 import termcolor
 import yaml
 
-from . import command
 from . import runner
 from . import version
-
-
-def print_exceptions(f):
-    """ Exceptions in threads don't show a traceback so this decorator will dump them to stdout """
-    @functools.wraps(f)
-    def wrapper(*args, **kwargs):
-        try:
-            return f(*args, **kwargs)
-        except:
-            termcolor.cprint(traceback.format_exc(), 'red')
-            print('-' * 20)
-            raise
-
-    return wrapper
-
-
-# See https://bugs.python.org/issue1167930 for why thread join ignores interrupts
-class InterruptibleThread(threading.Thread):
-    POLL_FREQ = 0.1
-
-    def join(self, timeout=None):
-        start_time = time.time()
-        while not timeout or time.time() - start_time < timeout:
-            super(InterruptibleThread, self).join(timeout or self.POLL_FREQ)
-            if not self.is_alive():
-                return
-        return
-
-
-def run_commands(commands, args, tmpdir, environment):
-    assert type(commands) == list, \
-        "Expected command list to be a list but got {}".format(type(commands))
-
-    threads_lock = threading.Lock()
-    threads = collections.defaultdict(list)
-    job_runner = runner.Runner(tmpdir=tmpdir, args=args, environment=environment)
-    results = []
-
-    @print_exceptions  # Ensure we see thread exceptions
-    def run_job(job, **kwargs):
-        results.append(job.run(**kwargs))
-
-    shared_context = command.SharedContext()
-
-    try:
-        for index, item in enumerate(commands):
-            if isinstance(item, dict):
-                value, features = next(iter(item.items()))
-            else:
-                value = item
-                features = {}
-
-            assert isinstance(value, str), "Command '{}' must be a string".format(value)
-
-            job = command.Job(command=value, features=features, args=args)
-
-            job.prepare(shared_context)
-
-            thread = InterruptibleThread(
-                target=run_job, args=(job,),
-                kwargs={'runner': job_runner, 'shared_context': shared_context})
-            thread.daemon = True  # Ensure this thread doesn't outlive the main thread
-
-            # Don't wait for processes explicitly marked as background
-            with threads_lock:
-                if features.get('background'):
-                    threads['background'].append(thread)
-                else:
-                    threads['normal'].append(thread)
-
-            # Keep track of all running threads
-            thread.start()
-
-            # Wait if command is synchronous
-            if not (features.get('background') or features.get('name')):
-                thread.join()
-
-        # Wait for all the non-background threads to complete
-        for t in threads['normal']:
-            t.join()
-
-        return all(results)
-
-    except KeyboardInterrupt:
-        termcolor.cprint("KEYBOARD INTERRUPT", 'red', file=sys.stderr)
-        return False
-
-    finally:
-        while True:  # Keep killing procs until the threads terminate
-            with threads_lock:
-                if any(t.isAlive() for t in itertools.chain(*threads.values())):
-                    job_runner.kill_all()
-                    time.sleep(0.1)
-                else:
-                    break
 
 
 def main(argv=sys.argv):
@@ -166,9 +66,13 @@ def main(argv=sys.argv):
 
     timer = threading.Timer(args.timeout, timeout_handler)
 
+    run = functools.partial(
+        runner.run_commands, shell=args.shell, retry_interval=args.retry_interval, tmpdir=tmpdir,
+        environment=environment, output_timeout=args.output_timeout)
+
     try:
         timer.start()
-        passed = run_commands(commands, args, tmpdir, environment)
+        passed = run(commands)
 
         if isinstance(data, dict):
             post_commands = data.get('post', [])
@@ -177,7 +81,7 @@ def main(argv=sys.argv):
 
         if post_commands:
             termcolor.cprint("Running 'post' commands")
-            run_commands(post_commands, args, tmpdir, environment)
+            run(post_commands)
 
         if not passed:
             sys.exit(termcolor.colored("FAILED", 'red'))

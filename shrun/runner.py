@@ -6,18 +6,39 @@ import io
 import os
 import re
 import subprocess
+import sys
 import threading
+import tempfile
 import time
+import traceback
 
+import six
 import termcolor
+
+from . import command
+from . import parser
 
 COLORS = ['yellow', 'blue', 'red', 'green', 'magenta', 'cyan']
 
 
+# See https://bugs.python.org/issue1167930 for why thread join ignores interrupts
+class InterruptibleThread(threading.Thread):
+    POLL_FREQ = 0.1
+
+    def join(self, timeout=None):
+        start_time = time.time()
+        while not timeout or time.time() - start_time < timeout:
+            super(InterruptibleThread, self).join(timeout or self.POLL_FREQ)
+            if not self.is_alive():
+                return
+        return
+
+
 class Runner(object):
-    def __init__(self, tmpdir, args, environment):
+    def __init__(self, tmpdir, environment, retry_interval=None, shell='/bin/bash'):
         self.tmpdir = tmpdir
-        self.args = args
+        self._retry_interval = retry_interval
+        self._shell = shell
         self._procs_lock = threading.Lock()
         self._procs = []
         self._output_lock = threading.Lock()
@@ -88,7 +109,7 @@ class Runner(object):
             self.print_command(command, message='Skipping')
             return True
 
-        interval = interval or self.args.retry_interval
+        interval = interval or self._retry_interval
 
         for attempt in range(0, retries + 1):
             command_name = self.create_name(name, command)
@@ -102,7 +123,7 @@ class Runner(object):
                     io.open(stderr_path, 'rb') as stderr_reader:
 
                 # See http://stackoverflow.com/questions/4789837/how-to-terminate-a-python-subprocess-launched-with-shell-true  # noqa
-                proc = subprocess.Popen(command, shell=True, executable=self.args.shell,
+                proc = subprocess.Popen(command, shell=True, executable=self._shell,
                                         stdout=stdout_writer, stderr=stderr_writer, env=self.env)
 
                 with self._procs_lock:
@@ -135,7 +156,7 @@ class Runner(object):
                     elif saw_output:
                         last_output_time = current_time
 
-                    time.sleep(0.1)
+                    time.sleep(0.05)
 
                 print_output()
 
@@ -169,3 +190,92 @@ class Runner(object):
     def run(self, *args, **kwargs):
         with self.using_color() as color:
             return self._run(*args, color=color, **kwargs)
+
+
+def print_exceptions(f):
+    """ Exceptions in threads don't show a traceback so this decorator will dump them to stdout """
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except:
+            termcolor.cprint(traceback.format_exc(), 'red')
+            print('-' * 20)
+            raise
+
+    return wrapper
+
+
+def run_commands(commands, retry_interval=None, shell='/bin/bash', tmpdir=None, output_timeout=None,
+                 environment={}):
+    tmpdir = tmpdir or tempfile.gettempdir()
+
+    assert type(commands) == list, \
+        "Expected command list to be a list but got {}".format(type(commands))
+
+    threads_lock = threading.Lock()
+    threads = collections.defaultdict(list)
+    job_runner = Runner(tmpdir=tmpdir, retry_interval=retry_interval, shell=shell,
+                        environment=environment)
+    results = []
+
+    @print_exceptions  # Ensure we see thread exceptions
+    def run_job(job, **kwargs):
+        results.append(job.run(**kwargs))
+
+    shared_context = command.SharedContext()
+
+    try:
+        for index, item in enumerate(commands):
+            if isinstance(item, dict):
+                value, features = next(iter(item.items()))
+            else:
+                value = item
+                features = {}
+
+            assert isinstance(value, six.string_types), (
+                "Command '{}' must be a string".format(value))
+
+            for command_value, features in parser.expand_groups(value, features):
+                job = command.Job(command=command_value, features=features,
+                                  output_timeout=output_timeout)
+
+                job.prepare(shared_context)
+
+                thread = InterruptibleThread(
+                    target=run_job, args=(job,),
+                    kwargs={'runner': job_runner, 'shared_context': shared_context})
+                thread.daemon = True  # Ensure this thread doesn't outlive the main thread
+
+                # Don't wait for processes explicitly marked as background
+                with threads_lock:
+                    if features.get('background'):
+                        threads['background'].append(thread)
+                    else:
+                        threads['normal'].append(thread)
+
+                # Keep track of all running threads
+                thread.start()
+
+                # Wait if command is synchronous
+                if not (features.get('background') or features.get('name')):
+                    thread.join()
+
+        # Wait for all the non-background threads to complete
+        for t in threads['normal']:
+            t.join()
+
+        return all(results)
+
+    except KeyboardInterrupt:
+        termcolor.cprint("KEYBOARD INTERRUPT", 'red', file=sys.stderr)
+        return False
+
+    finally:
+        while True:  # Keep killing procs until the threads terminate
+            with threads_lock:
+                if any(t.isAlive() for t in itertools.chain(*threads.values())):
+                    job_runner.kill_all()
+                    time.sleep(0.1)
+                else:
+                    break

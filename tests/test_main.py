@@ -1,8 +1,5 @@
 from __future__ import print_function
 
-import contextlib
-import os
-
 import pytest  # flake8: noqa
 
 from shrun import main
@@ -59,19 +56,6 @@ def test_exits_with_error_on_failure(capfd, tmpdir):
     assert 'FAILED' in out
 
 
-def test_runs_job_in_background(capfd):
-    """ Runs the command in the background """
-    run_command("""
-        - "while [ ! -f done ]; do true; done; echo DONE" :
-            background: true
-        - touch done
-        """)
-    main.main(('this-command', 'test.yml'))
-    out, err = capfd.readouterr()
-    assert 'DONE' in out
-    assert 'Done' in out
-
-
 def test_timeout(capfd):
     """ Fails if the entire sequence doesn't complete in the timeout """
     with open('test.yml', 'w') as f:
@@ -81,37 +65,12 @@ def test_timeout(capfd):
     assert 'FAILED' in exc_info.value.message
 
 
-def test_command_output_timeout(capfd):
-    """ Fails if an individual command doesn't output in the timeout """
-    with pytest.raises(SystemExit):
-        run_command("""
-            - "while true; do sleep 1; done":
-                timeout: 0
-            """)
-    out, err = capfd.readouterr()
-    assert 'TIMEOUT' in out
-
-
 def test_global_command_output_timeout(capfd):
     """ Fails if an individual command doesn't output in the global command timeout """
     with pytest.raises(SystemExit):
         run_command('- while true; do sleep 1; done', ('--output-timeout', '0'))
     out, err = capfd.readouterr()
     assert 'TIMEOUT' in out
-
-
-def test_command_in_parallel(capfd):
-    """ Runs commands in parallel with dependencies """
-    run_command("""
-        - "while [ ! -f first ]; do touch first; done; echo First Done":
-            name: first
-        - "[ -f first ] && echo Second Done":
-            depends_on: first
-            background: true
-        - touch first && echo Third Done
-        """)
-    out, err = capfd.readouterr()
-    assert out.index('Third Done') < out.index('Second Done')
 
 
 def test_multiple_commands_with_same_name_hits_assertion():
@@ -127,9 +86,9 @@ def test_multiple_commands_with_same_name_hits_assertion():
         main.main(('this-command', f.name))
 
 
-def test_predicates(capfd):
+def test_predicates(capfd, monkeypatch):
     """ Assert that names are unique """
-    os.environ['WORD'] = 'word'
+    monkeypatch.setenv('WORD', 'word')
     run_command("""
         - "true":
             set: skip_it
@@ -160,9 +119,9 @@ def test_invalid_key(capfd):
             """)
 
 
-def test_environment(capfd):
+def test_environment(capfd, monkeypatch):
     """ Environment can be set with environment key """
-    os.environ['GOOSE'] = 'goose'
+    monkeypatch.setenv('GOOSE', 'goose')
     run_command("""
         environment:
             GOOSE: $GOOSE
@@ -200,13 +159,3 @@ def test_main_and_post_with_keyboard_interrupt(capfd):
     out, err = capfd.readouterr()
     assert "KEYBOARD INTERRUPT" in err
     assert "Ran yes" in out
-
-
-def test_retries(capfd):
-    """ Retry an event """
-    run_command("""
-        - "[ -e file ] || { touch file; false; }":
-            retries: 1
-        """)
-    out, err = capfd.readouterr()
-    assert "Retrying" in out

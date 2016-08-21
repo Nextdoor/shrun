@@ -13,6 +13,7 @@ setup(
     test_suite='tests',
     install_requires=[
         'future>=0.15.2',
+        'pyparsing>=2.1.8',
         'pyyaml',
         'six',
         'termcolor>=1.1.0',

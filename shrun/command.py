@@ -45,10 +45,10 @@ class SharedContext(object):
 
 
 class Job(object):
-    def __init__(self, command, features, args):
+    def __init__(self, command, features, output_timeout=None):
         self._command = command
         self._features = features
-        self._args = args
+        self._output_timeout = output_timeout
         self._prepared = False
         for key in self._features.keys():
             assert key in KEYWORDS, "Unknown keyword '{}'".format(key)
@@ -59,7 +59,7 @@ class Job(object):
 
     @property
     def timeout(self):
-        return self._features.get('timeout', self._args.output_timeout)
+        return self._features.get('timeout', self._output_timeout)
 
     @property
     def command(self):

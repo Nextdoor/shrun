@@ -62,3 +62,55 @@ Commands can be retried a given number of times at a given interval:
     interval: 5
     retries: 1
 ```
+
+## Groups
+
+Commands can be run for each member of a group:
+
+```
+- touch file_{{A,B}}
+```
+
+Groups can be used in names:
+
+
+```
+- sleep 10; touch file_{{A,B}}:
+    name: name_{{A,B}}
+- echo Done:
+    depends_on: name_A name_B
+```
+
+Identical groups are replicated together, so
+
+```
+- touch file_{{A,B}}; mv file_{{A,B}} dir
+```
+
+becomes
+
+```
+- touch file_A; mv file_A dir
+- touch file_B; mv file_B dir
+```
+
+Groups can be named to avoid having to repeat the content of the group:
+
+Identical groups are replicated together, so
+
+```
+- touch file_{{my_group=A,B}}; mv file_{{my_group}} dir
+```
+
+also becomes
+
+```
+- touch file_A; mv file_A dir
+- touch file_B; mv file_B dir
+```
+
+Named groups can be mapped to different values using a 1-1 mapping:
+
+```
+- mv file_{{my_group=A,B}} dir{{my_group=1,2}}
+```
