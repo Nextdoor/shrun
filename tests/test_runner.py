@@ -189,7 +189,7 @@ def test_labeled_groups(capfd):
 def test_loops(capfd):
     """ Loops are indicated when the first entry of a sequence has key repeat """
     run_command("""
-        - - repeat: my_group:1,2
+        - - foreach: my_group:1,2
           - echo test{{my_group}}
         """)
     out, err = capfd.readouterr()

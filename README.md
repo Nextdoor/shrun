@@ -4,7 +4,7 @@ Yaml test flow runner
 
 ## Usage
 
-Run commands shrun <file>.  Inspired by CircleCi's circle.yaml files.
+Run commands shrun <file>.  Inspired by CircleCi's circle.yml files.
 
 ## Format
 
@@ -115,13 +115,13 @@ Labeled groups can be mapped to different values using a 1-1 mapping:
 - mv file_{{my_group:A,B}} dir{{my_group:1,2}}
 ```
 
-## Sequences
+## Repeated Sequences
 
-Sequences of commands can be created similar to groups.  The first item
+Repeated sequences of commands can be created similar to groups.  The first item
  in the sequence must have the repeat property set to a valid group specification.
  
 ```
-- - repeat: my_group=A,B
+- - foreach: my_group=A,B
   - touch file1_{{my_group}}
   - cp file1_{{my_group}} file2_{{my_group}}
 ```
@@ -129,7 +129,7 @@ Sequences of commands can be created similar to groups.  The first item
 Sequences can be nested:
  
 ```
-- - repeat: my_group=A,B
-  - - repeat: 1,2 
+- - foreach: my_group=A,B
+  - - foreach: 1,2 
     - touch file1_{{my_group}}_{1,2}
 ```

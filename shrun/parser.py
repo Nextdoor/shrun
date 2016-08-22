@@ -84,8 +84,7 @@ def _get_label(group):
 
 def _generate_commands_for_sequence(sequence, groups_with_index=()):
     assert sequence and isinstance(sequence[0], dict), "Group must start with an object"
-    repeat = sequence[0].get('repeat')
-    group = GROUP_LIST_PARSER.parseString(repeat)
+    group = GROUP_LIST_PARSER.parseString(sequence[0].get('foreach'))
     assert _get_label(group) not in [_get_label(g) for g, _ in groups_with_index], (
         "Group '{}' is already defined in a parent sequence".format(_get_label(group)))
     for index, item in enumerate(group['items']):
