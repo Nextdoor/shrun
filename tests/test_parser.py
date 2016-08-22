@@ -1,3 +1,5 @@
+from builtins import str
+
 import pytest  # flake8: noqa
 import yaml
 
@@ -56,7 +58,7 @@ class TestSeries:
         """ Series are mapped 1-1 to new values if the group label matches. """
         with pytest.raises(AssertionError) as exc_info:
             parse_command('test{{my_series:A,B}}{{my_series:1,2,3}}')
-        assert "Mapping for series 'my_series' must be 1-1" in exc_info.value
+        assert "Mapping for series 'my_series' must be 1-1" in str(exc_info.value)
 
 
 class TestSequences:

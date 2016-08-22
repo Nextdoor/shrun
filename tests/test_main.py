@@ -1,4 +1,5 @@
 from __future__ import print_function
+from builtins import str
 
 import pytest  # flake8: noqa
 
@@ -50,7 +51,7 @@ def test_exits_with_error_on_failure(capfd, tmpdir):
     """ Reports errors """
     with pytest.raises(SystemExit) as exc_info:
         run_command("- echo bad && false")
-    assert 'FAILED' in exc_info.value.message
+    assert 'FAILED' in str(exc_info.value)
     out, err = capfd.readouterr()
     assert 'bad' in out
     assert 'FAILED' in out
@@ -62,7 +63,7 @@ def test_timeout(capfd):
         print('- while true; do sleep 1; done', file=f)
     with pytest.raises(SystemExit) as exc_info:
         run_command('- while true; do sleep 1; done', ('--timeout', '0'))
-    assert 'FAILED' in exc_info.value.message
+    assert 'FAILED' in str(exc_info.value)
 
 
 def test_global_command_output_timeout(capfd):
@@ -155,7 +156,7 @@ def test_main_and_post_with_keyboard_interrupt(capfd):
             post:
                 - echo Ran ${no:-yes}
             """)
-    assert "FAILED" in exc_info.value.message
+    assert "FAILED" in str(exc_info.value)
     out, err = capfd.readouterr()
     assert "KEYBOARD INTERRUPT" in err
     assert "Ran yes" in out

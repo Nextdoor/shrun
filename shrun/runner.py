@@ -1,3 +1,5 @@
+from builtins import str
+
 import collections
 import contextlib
 import functools
@@ -81,7 +83,7 @@ class Runner(object):
     @staticmethod
     def print_lines(lines, prefix, color):
         for line in lines:
-            termcolor.cprint(prefix + line, color, end='')
+            termcolor.cprint(prefix + str(line), color, end='')
 
     @property
     def env(self):
