@@ -8,34 +8,57 @@ KEYWORDS = ['background', 'depends_on', 'if', 'name', 'set', 'timeout', 'unless'
 
 NON_COMMA_TOKENS = pyparsing.Combine(
     pyparsing.OneOrMore(pyparsing.Word(pyparsing.printables, excludeChars=',')))
-GROUP_NAME = pyparsing.Word(pyparsing.alphas + '_') + pyparsing.Suppress(pyparsing.Literal(':'))
-GROUP_LIST_PARSER = (
-    pyparsing.Optional(GROUP_NAME)('label') +
+SERIES_NAME = pyparsing.Word(pyparsing.alphas + '_') + pyparsing.Suppress(pyparsing.Literal(':'))
+SERIES_LIST_PARSER = (
+    pyparsing.Optional(SERIES_NAME)('label') +
     (pyparsing.ZeroOrMore(NON_COMMA_TOKENS + pyparsing.Suppress(pyparsing.Literal(','))) +
      NON_COMMA_TOKENS)('items'))
 
-GROUP_PARSER = pyparsing.nestedExpr('{{', '}}')
+SERIES_PARSER = pyparsing.nestedExpr('{{', '}}')
 
 
-def _expand_value(value, target_group, index):
+class _Series(object):
+    def __init__(self, value):
+        self._parse_results = SERIES_LIST_PARSER.parseString(value)
+
+    @property
+    def labeled(self):
+        return 'label' in self._parse_results
+
+    @property
+    def label(self):
+        return (self._parse_results['label'][0] if self.labeled 
+                else ','.join(self._parse_results['items']))
+
+    def __eq__(self, other):
+        return self.label == other.label
+
+    @property
+    def items(self):
+        return self._parse_results['items']
+
+    def __iter__(self):
+        return iter(self.items)
+
+
+def _expand_value(value, target_series, index):
     if isinstance(value, six.string_types):
         new_value = ''
         start = 0
-        for match_string, match_start, match_end in list(GROUP_PARSER.scanString(value)):
-            group = GROUP_LIST_PARSER.parseString(match_string[0][0])
-            # If this is is the same group as the target group
-            if _get_label(group) == _get_label(target_group):
-                if 'label' in group:
-                    items = group['items']
-                    assert len(items) == len(
-                        target_group['items']), "Group mapping must be 1-1"
+        for match_string, match_start, match_end in list(SERIES_PARSER.scanString(value)):
+            series = _Series(match_string[0][0])
+            if series == target_series:
+                if series.labeled:
+                    items = series.items
+                    assert len(items) == len(target_series.items), (
+                        "Mapping for series '{}' must be 1-1".format(target_series.label))
                 else:
-                    items = target_group['items']
+                    items = target_series.items
                 new_value += value[start:match_start] + items[index]
                 start = match_end
         return new_value + value[start:]
     else:
-        return {k: _expand_value(v, target_group, index) for k, v in value.items()}
+        return {k: _expand_value(v, target_series, index) for k, v in value.items()}
 
 
 class Command(collections.namedtuple('Command', ['command', 'features'])):
@@ -54,49 +77,41 @@ class Command(collections.namedtuple('Command', ['command', 'features'])):
 
         return super(Command, cls).__new__(cls, value, features)
 
-    def expand_group(self, group, index):
-        return Command(command=_expand_value(self.command, group, index),
-                       features=_expand_value(self.features, group, index))
+    def expand_series(self, series, index):
+        return Command(command=_expand_value(self.command, series, index),
+                       features=_expand_value(self.features, series, index))
 
     def generate_all_commands(self):
-        """ Generates a command for each item-permutation of present groups
-
-        Yields:
-            Command objects
-        """
-        matches = GROUP_PARSER.scanString(self.command)
+        """ Yields a command for each item-permutation of all present series """
+        matches = SERIES_PARSER.scanString(self.command)
 
         try:
-            group_string = next(matches)[0][0][0]
+            series_string = next(matches)[0][0][0]
         except StopIteration:
             yield self
         else:
-            group = GROUP_LIST_PARSER.parseString(group_string)
+            series = _Series(series_string)
 
-            for index, item in enumerate(group['items']):
-                for command in self.expand_group(group, index).generate_all_commands():
+            for index, item in enumerate(series):
+                for command in self.expand_series(series, index).generate_all_commands():
                     yield command
 
 
-def _get_label(group):
-    return group['label'][0] if 'label' in group else ','.join(group['items'])
-
-
-def _generate_commands_for_sequence(sequence, groups_with_index=()):
-    assert sequence and isinstance(sequence[0], dict), "Group must start with an object"
-    group = GROUP_LIST_PARSER.parseString(sequence[0].get('foreach'))
-    assert _get_label(group) not in [_get_label(g) for g, _ in groups_with_index], (
-        "Group '{}' is already defined in a parent sequence".format(_get_label(group)))
-    for index, item in enumerate(group['items']):
-        new_groups_with_index = list(groups_with_index) + [(group, index)]
+def _generate_commands_for_sequence(sequence, series_index_pairs=()):
+    assert sequence and isinstance(sequence[0], dict), "series must start with an object"
+    series = _Series(sequence[0].get('foreach'))
+    assert series not in [s for s, _ in series_index_pairs], (
+        "series '{}' is already defined in a parent sequence".format(series.label))
+    for index, item in enumerate(series):
+        new_series_index_pairs = list(series_index_pairs) + [(series, index)]
         for command in sequence[1:]:
             if isinstance(command, list):  # nested sequence
-                for new_command in _generate_commands_for_sequence(command, new_groups_with_index):
+                for new_command in _generate_commands_for_sequence(command, new_series_index_pairs):
                     yield new_command
             else:
                 new_command = Command(command)
-                for group, group_idx in new_groups_with_index:
-                    new_command = new_command.expand_group(group, group_idx)
+                for series, series_idx in new_series_index_pairs:
+                    new_command = new_command.expand_series(series, series_idx)
                 for cmd in new_command.generate_all_commands():
                     yield cmd
 

@@ -63,15 +63,15 @@ Commands can be retried a given number of times at a given interval:
     retries: 1
 ```
 
-## Groups
+## Series
 
-Commands can be run for each member of a group:
+Commands can be run for each member in a series:
 
 ```
 - touch file_{{A,B}}
 ```
 
-Groups can be used in names:
+Series can be used in names:
 
 
 ```
@@ -81,7 +81,7 @@ Groups can be used in names:
     depends_on: name_A name_B
 ```
 
-Identical groups are replicated together, so
+Identical series are replicated together, so
 
 ```
 - touch file_{{A,B}}; mv file_{{A,B}} dir
@@ -94,12 +94,12 @@ becomes
 - touch file_B; mv file_B dir
 ```
 
-Groups can be labeled to avoid having to repeat the content of the group:
+Series can be labeled to avoid having to repeat the content of the group:
 
 Identical groups are replicated together, so
 
 ```
-- touch file_{{my_group=A,B}}; mv file_{{my_group}} dir
+- touch file_{{my_series=A,B}}; mv file_{{my_series}} dir
 ```
 
 also becomes
@@ -109,27 +109,27 @@ also becomes
 - touch file_B; mv file_B dir
 ```
 
-Labeled groups can be mapped to different values using a 1-1 mapping:
+Labeled series can be mapped to different values using a 1-1 mapping:
 
 ```
-- mv file_{{my_group:A,B}} dir{{my_group:1,2}}
+- mv file_{{my_series:A,B}} dir{{my_series:1,2}}
 ```
 
 ## Repeated Sequences
 
-Repeated sequences of commands can be created similar to groups.  The first item
- in the sequence must have the repeat property set to a valid group specification.
+Sequences of commands can be repeated for each item in a series.  The first item
+ in the sequence must have the 'foreach' property set to a valid series specification.
  
 ```
-- - foreach: my_group=A,B
-  - touch file1_{{my_group}}
-  - cp file1_{{my_group}} file2_{{my_group}}
+- - foreach: my_series=A,B
+  - touch file1_{{my_series}}
+  - cp file1_{{my_series}} file2_{{my_series}}
 ```
 
 Sequences can be nested:
  
 ```
-- - foreach: my_group=A,B
+- - foreach: my_series=A,B
   - - foreach: 1,2 
-    - touch file1_{{my_group}}_{1,2}
+    - touch file1_{{my_series}}_{1,2}
 ```

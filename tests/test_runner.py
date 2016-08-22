@@ -136,16 +136,16 @@ def test_retries(capfd, tmpdir_as_cwd):
     assert "Retrying" in out
 
 
-def test_groups_in_command(capfd):
-    """ A separate command is generated for each group """
+def test_series_in_command(capfd):
+    """ A separate command is generated for each series """
     run_command("- echo test{{A,B}}")
     out, err = capfd.readouterr()
     assert "testA" in out
     assert "testB" in out
 
 
-def test_multiple_groups_in_command(capfd):
-    """ Multiple groups generate the cross-product """
+def test_multiple_series_in_command(capfd):
+    """ Multiple series generate the cross-product """
     run_command("- echo test{{A,B}}{{1,2}}")
     out, err = capfd.readouterr()
     assert "testA1" in out
@@ -154,8 +154,8 @@ def test_multiple_groups_in_command(capfd):
     assert "testB2" in out
 
 
-def test_multiple_groups_in_command(capfd):
-    """ Identical groups are expanded together """
+def test_multiple_series_in_command(capfd):
+    """ Identical series are expanded together """
     run_command("- echo test{{A,B}}{{A,B}}")
     out, err = capfd.readouterr()
     assert "testAA" in out
@@ -163,8 +163,8 @@ def test_multiple_groups_in_command(capfd):
     assert "testAB" not in out
 
 
-def test_groups_with_name(capfd):
-    """ Groups are expanded in names as well """
+def test_series_with_name(capfd):
+    """ Series are expanded in names as well """
     run_command("""
         - echo test{{A,B}}:
             name: test_name{{A,B}}
@@ -178,9 +178,9 @@ def test_groups_with_name(capfd):
     assert "test_nameB" in out
 
 
-def test_labeled_groups(capfd):
-    """ Groups are expanded in named groups """
-    run_command("- echo test{{my_group:A,B}}{{my_group}}")
+def test_labeled_series(capfd):
+    """ Series are expanded in named series """
+    run_command("- echo test{{my_series:A,B}}{{my_series}}")
     out, err = capfd.readouterr()
     assert "testAA" in out
     assert "testBB" in out
@@ -189,8 +189,8 @@ def test_labeled_groups(capfd):
 def test_loops(capfd):
     """ Loops are indicated when the first entry of a sequence has key repeat """
     run_command("""
-        - - foreach: my_group:1,2
-          - echo test{{my_group}}
+        - - foreach: my_series:1,2
+          - echo test{{my_series}}
         """)
     out, err = capfd.readouterr()
     assert "test1" in out
