@@ -19,29 +19,39 @@ SERIES_PARSER = pyparsing.nestedExpr('{{', '}}')
 
 class _Series(object):
     def __init__(self, value):
-        self._parse_results = SERIES_LIST_PARSER.parseString(value)
+        if isinstance(value, six.string_types):
+            parse_results = SERIES_LIST_PARSER.parseString(value)
+            self._items = parse_results['items']
+            if 'label' in parse_results:
+                self._label = parse_results['label'][0]
+            else:
+                self._label = None
+        elif isinstance(value, dict):
+            self._label, self._items = next(iter(value.items()))
+        else:
+            self._label = None
+            self._items = value
 
     @property
     def labeled(self):
-        return 'label' in self._parse_results
+        return bool(self._label)
 
     @property
     def label(self):
-        return (self._parse_results['label'][0] if self.labeled
-                else ','.join(self._parse_results['items']))
+        return self._label or ','.join(self.items)
 
     def __eq__(self, other):
         return self.label == other.label
 
     @property
     def items(self):
-        return self._parse_results['items']
+        return self._items
 
     def __iter__(self):
         return iter(self.items)
 
     def __repr__(self):
-        repr_str = ','.join(self._parse_results['items'])
+        repr_str = ','.join(self.items)
         if self.labeled:
             return '{}:{}'.format(self.label, repr_str)
         else:

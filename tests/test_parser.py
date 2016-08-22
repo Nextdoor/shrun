@@ -69,6 +69,20 @@ class TestSequences:
         """))) == [('echo testA_x', {}), ('echo testA_y', {}), ('echo test2A', {}),
                    ('echo testB_x', {}), ('echo testB_y', {}), ('echo test2B', {})]
 
+    def test_labeled_foreach_series(self):
+        """ Sequences are repeated for each item in the 'foreach' series. """
+        assert list(parser.generate_commands(yaml.load("""
+            - foreach: {my_series: [A,B]}
+            - echo test{{my_series}}
+        """))) == [('echo testA', {}), ('echo testB', {})]
+
+    def test_unlabeled_foreach_series(self):
+        """ Sequences are repeated for each item in the 'foreach' series. """
+        assert list(parser.generate_commands(yaml.load("""
+            - foreach: [A,B]
+            - echo test{{A,B}}
+        """))) == [('echo testA', {}), ('echo testB', {})]
+
     def test_nested_foreach_sequences(self):
         """ Sequences are expanded based using the 'foreach' feature. """
         assert list(parser.generate_commands(yaml.load("""
