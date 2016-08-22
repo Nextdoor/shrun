@@ -81,7 +81,12 @@ def _expand_value(value, target_series, index):
 class Command(collections.namedtuple('Command', ['command', 'features'])):
     def __new__(cls, command, features=None):
         if isinstance(command, dict):
+            assert len(list(command.items())) == 1, (
+                "Command has multiple top-level keys: %s" % sorted(command.keys()))
             value, features = next(iter(command.items()))
+            assert value != 'foreach', (
+                "'foreach' may only be specified at the beginning of a sequence")
+
         else:
             value = command
 

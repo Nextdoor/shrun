@@ -21,6 +21,15 @@ class TestGenerateCommands:
         with pytest.raises(AssertionError):
             parse_command({'sleep 1000': {'backgroundish': True}})
 
+    def test_badly_formatted_entry(self):
+        """ Check that only valid keywords are used """
+        with pytest.raises(AssertionError) as exc_info:
+            list(parser.generate_commands(yaml.load("""
+                - key1: 1
+                  key2: 2
+                """)))
+        assert "Command has multiple top-level keys: ['key1', 'key2']" in str(exc_info.value)
+
 
 class TestSeries:
     def test_simple_series(self):
@@ -102,3 +111,13 @@ class TestSequences:
                   - - foreach: my_series:1,2
                     - echo test{{my_series}}
             """)))
+
+    def test_foreach_in_non_first_position_raises_error(self):
+        """ 'Foreach' can only be specified at the beginning of a sequence. """
+        with pytest.raises(AssertionError) as exc_info:
+            list(parser.generate_commands(yaml.load("""
+                - something
+                - foreach: [A,B]
+                """)))
+        assert ("'foreach' may only be specified at the beginning of a sequence" in
+                str(exc_info.value))
