@@ -31,27 +31,27 @@ def test_groups_in_features():
         ('testA', {'depends_on': 'nameA'}), ('testB', {'depends_on': 'nameB'})]
 
 
-def test_named_groups():
+def test_labeled_groups():
     """ Groups are expanded when their name matches an existing group. """
-    assert parse_command('test{{my_group=A,B}}{{my_group}}') == [('testAA', {}), ('testBB', {})]
+    assert parse_command('test{{my_group:A,B}}{{my_group}}') == [('testAA', {}), ('testBB', {})]
 
 
-def test_named_groups_map_1_to_1():
+def test_labeled_groups_map_1_to_1():
     """ Groups are mapped 1-1 to new values if the group name matches. """
-    assert parse_command('test{{my_group=A,B}}{{my_group=1,2}}') == [('testA1', {}), ('testB2', {})]
+    assert parse_command('test{{my_group:A,B}}{{my_group:1,2}}') == [('testA1', {}), ('testB2', {})]
 
 
-def test_named_groups_map_1_to_1():
+def test_labeled_groups_map_1_to_1():
     """ Groups are mapped 1-1 to new values if the group name matches. """
     with pytest.raises(AssertionError) as exc_info:
-        parse_command('test{{my_group=A,B}}{{my_group=1,2,3}}')
+        parse_command('test{{my_group:A,B}}{{my_group:1,2,3}}')
     assert "Group mapping must be 1-1" in exc_info.value
 
 
 def test_sequence():
     """ Sequences are expanded based using the repeat feature. """
     assert list(parser.generate_commands(yaml.load("""
-        - - repeat: my_group=A,B
+        - - repeat: my_group:A,B
           - echo test{{my_group}}_{{x,y}}
           - echo test2{{my_group}}
     """))) == [('echo testA_x', {}), ('echo testA_y', {}), ('echo test2A', {}),
@@ -61,7 +61,7 @@ def test_sequence():
 def test_nested_sequences():
     """ Sequences are expanded based using the repeat feature. """
     assert list(parser.generate_commands(yaml.load("""
-        - - repeat: my_group=A,B
+        - - repeat: my_group:A,B
           - - repeat: 1,2
             - echo test{{my_group}}_{{1,2}}
     """))) == [('echo testA_1', {}), ('echo testA_2', {}),
@@ -72,8 +72,8 @@ def test_nested_sequences_with_same_name_error():
     """ A group name cannot be used in nested sequences. """
     with pytest.raises(AssertionError) as exc_info:
         assert list(parser.generate_commands(yaml.load("""
-            - - repeat: my_group=A,B
-              - - repeat: my_group=1,2
+            - - repeat: my_group:A,B
+              - - repeat: my_group:1,2
                 - echo test{{my_group}}
         """)))
 

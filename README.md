@@ -94,7 +94,7 @@ becomes
 - touch file_B; mv file_B dir
 ```
 
-Groups can be named to avoid having to repeat the content of the group:
+Groups can be labeled to avoid having to repeat the content of the group:
 
 Identical groups are replicated together, so
 
@@ -109,10 +109,10 @@ also becomes
 - touch file_B; mv file_B dir
 ```
 
-Named groups can be mapped to different values using a 1-1 mapping:
+Labeled groups can be mapped to different values using a 1-1 mapping:
 
 ```
-- mv file_{{my_group=A,B}} dir{{my_group=1,2}}
+- mv file_{{my_group:A,B}} dir{{my_group:1,2}}
 ```
 
 ## Sequences

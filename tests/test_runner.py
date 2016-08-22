@@ -178,9 +178,9 @@ def test_groups_with_name(capfd):
     assert "test_nameB" in out
 
 
-def test_named_groups(capfd):
+def test_labeled_groups(capfd):
     """ Groups are expanded in named groups """
-    run_command("- echo test{{my_group=A,B}}{{my_group}}")
+    run_command("- echo test{{my_group:A,B}}{{my_group}}")
     out, err = capfd.readouterr()
     assert "testAA" in out
     assert "testBB" in out
@@ -189,7 +189,7 @@ def test_named_groups(capfd):
 def test_loops(capfd):
     """ Loops are indicated when the first entry of a sequence has key repeat """
     run_command("""
-        - - repeat: my_group=1,2
+        - - repeat: my_group:1,2
           - echo test{{my_group}}
         """)
     out, err = capfd.readouterr()

@@ -8,9 +8,9 @@ KEYWORDS = ['background', 'depends_on', 'if', 'name', 'set', 'timeout', 'unless'
 
 NON_COMMA_TOKENS = pyparsing.Combine(
     pyparsing.OneOrMore(pyparsing.Word(pyparsing.printables, excludeChars=',')))
-GROUP_NAME = pyparsing.Word(pyparsing.alphas + '_') + pyparsing.Suppress(pyparsing.Literal('='))
+GROUP_NAME = pyparsing.Word(pyparsing.alphas + '_') + pyparsing.Suppress(pyparsing.Literal(':'))
 GROUP_LIST_PARSER = (
-    pyparsing.Optional(GROUP_NAME)('name') +
+    pyparsing.Optional(GROUP_NAME)('label') +
     (pyparsing.ZeroOrMore(NON_COMMA_TOKENS + pyparsing.Suppress(pyparsing.Literal(','))) +
      NON_COMMA_TOKENS)('items'))
 
@@ -24,8 +24,8 @@ def _expand_value(value, target_group, index):
         for match_string, match_start, match_end in list(GROUP_PARSER.scanString(value)):
             group = GROUP_LIST_PARSER.parseString(match_string[0][0])
             # If this is is the same group as the target group
-            if _get_name(group) == _get_name(target_group):
-                if 'name' in group:
+            if _get_label(group) == _get_label(target_group):
+                if 'label' in group:
                     items = group['items']
                     assert len(items) == len(
                         target_group['items']), "Group mapping must be 1-1"
@@ -78,16 +78,16 @@ class Command(collections.namedtuple('Command', ['command', 'features'])):
                     yield command
 
 
-def _get_name(group):
-    return group['name'][0] if 'name' in group else ','.join(group['items'])
+def _get_label(group):
+    return group['label'][0] if 'label' in group else ','.join(group['items'])
 
 
 def _generate_commands_for_sequence(sequence, groups_with_index=()):
     assert sequence and isinstance(sequence[0], dict), "Group must start with an object"
     repeat = sequence[0].get('repeat')
     group = GROUP_LIST_PARSER.parseString(repeat)
-    assert _get_name(group) not in [_get_name(g) for g, _ in groups_with_index], (
-        "Group '{}' is already defined in a parent sequence".format(_get_name(group)))
+    assert _get_label(group) not in [_get_label(g) for g, _ in groups_with_index], (
+        "Group '{}' is already defined in a parent sequence".format(_get_label(group)))
     for index, item in enumerate(group['items']):
         new_groups_with_index = list(groups_with_index) + [(group, index)]
         for command in sequence[1:]:
