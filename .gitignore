@@ -5,6 +5,5 @@
 *.egg-info
 *.pyc
 .gitignore.swp
-bats/
 build/
 dist/

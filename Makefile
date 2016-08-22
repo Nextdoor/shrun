@@ -1,17 +1,20 @@
-ifndef TERM
-    # Don't use pretty format if terminal is not available
-    BATS_FLAGS = -t
-endif
+SHRUN=shrun
 
 .PHONY: test
 
 test:
-	bats/bin/bats $(BATS_FLAGS) tests/*.bats
+	py.test $(TOXARGS)
+	$(MAKE) smoke_test
 
-bats:
-	git clone https://github.com/sstephenson/bats.git
+smoke_test:
+	@echo "Running smoke test"
+	@echo "This should pass:"
+	$(SHRUN) samples/pass.yml
+	@echo "This should fail:"
+	! $(SHRUN) samples/fail.yml
+	@echo "Success!"
 
-init: bats
+init:
 	-flake8 --install-hook  # allow this line to fail
 	pip install -r requirements.txt
 	pip install -e .
