@@ -186,8 +186,8 @@ def test_labeled_series(capfd):
     assert "testBB" in out
 
 
-def test_loops(capfd):
-    """ Loops are indicated when the first entry of a sequence has key repeat """
+def test_foreach(capfd):
+    """ Foreach are indicated when the first entry of a sequence has key 'foreach' """
     run_command("""
         - - foreach: my_series:1,2
           - echo test{{my_series}}

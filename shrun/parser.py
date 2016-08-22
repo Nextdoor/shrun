@@ -27,7 +27,7 @@ class _Series(object):
 
     @property
     def label(self):
-        return (self._parse_results['label'][0] if self.labeled 
+        return (self._parse_results['label'][0] if self.labeled
                 else ','.join(self._parse_results['items']))
 
     def __eq__(self, other):
@@ -39,6 +39,13 @@ class _Series(object):
 
     def __iter__(self):
         return iter(self.items)
+
+    def __repr__(self):
+        repr_str = ','.join(self._parse_results['items'])
+        if self.labeled:
+            return '{}:{}'.format(self.label, repr_str)
+        else:
+            return repr_str
 
 
 def _expand_value(value, target_series, index):
@@ -97,31 +104,38 @@ class Command(collections.namedtuple('Command', ['command', 'features'])):
                     yield command
 
 
-def _generate_commands_for_sequence(sequence, series_index_pairs=()):
-    assert sequence and isinstance(sequence[0], dict), "series must start with an object"
-    series = _Series(sequence[0].get('foreach'))
-    assert series not in [s for s, _ in series_index_pairs], (
-        "series '{}' is already defined in a parent sequence".format(series.label))
-    for index, item in enumerate(series):
-        new_series_index_pairs = list(series_index_pairs) + [(series, index)]
-        for command in sequence[1:]:
-            if isinstance(command, list):  # nested sequence
-                for new_command in _generate_commands_for_sequence(command, new_series_index_pairs):
-                    yield new_command
+def _generate_commands_for_sequence(sequence, foreach_index_pairs=()):
+    assert sequence, 'Sequence cannot be empty'
+
+    if isinstance(sequence[0], dict):
+        foreach = sequence[0].get('foreach')
+        if foreach:
+            foreach = _Series(foreach)
+    else:
+        foreach = None
+
+    if foreach:
+        assert foreach not in [s for s, _ in foreach_index_pairs], (
+            "series '{}' is already defined in a parent sequence".format(foreach.label))
+
+        for index, _ in enumerate(foreach):
+            for generated_command in _generate_commands_for_sequence(
+                    sequence[1:], list(foreach_index_pairs) + [(foreach, index)]):
+                yield generated_command
+    else:
+        for item in sequence:
+            if isinstance(item, (list, tuple)):
+                for generated_command in _generate_commands_for_sequence(item,
+                                                                         foreach_index_pairs):
+                    yield generated_command
             else:
-                new_command = Command(command)
-                for series, series_idx in new_series_index_pairs:
-                    new_command = new_command.expand_series(series, series_idx)
-                for cmd in new_command.generate_all_commands():
-                    yield cmd
+                command = Command(item)
+                for series, series_idx in foreach_index_pairs:
+                    command = command.expand_series(series, series_idx)
+                for generated_command in command.generate_all_commands():
+                    yield generated_command
 
 
 def generate_commands(commands):
-    for index, item in enumerate(commands):
-        if isinstance(item, list):
-            for command in _generate_commands_for_sequence(item):
-                yield command
-            return
-
-        for command in Command(item).generate_all_commands():
-            yield command
+    for command in _generate_commands_for_sequence(commands):
+        yield command
