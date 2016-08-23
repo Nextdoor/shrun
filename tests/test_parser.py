@@ -40,6 +40,7 @@ class TestGenerateCommands:
             """)))
         assert commands == [('Line 1 Line 2', {'retries': 1})]
 
+
 class TestSeries:
     def test_simple_series(self):
         """ A separate command is generated for each series """
