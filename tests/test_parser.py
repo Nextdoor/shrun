@@ -131,3 +131,20 @@ class TestSequences:
                 """)))
         assert ("'foreach' may only be specified at the beginning of a sequence" in
                 str(exc_info.value))
+
+    def test_foreach_series_with_integer_feature_values(self):
+        """ Sequences are repeated for each item in the 'foreach' series. """
+        assert list(parser.generate_commands(yaml.load("""
+            - foreach: [A,B]
+            - echo test{{A,B}}:
+                retries: 1
+        """))) == [('echo testA', {'retries': 1}), ('echo testB', {'retries': 1})]
+
+    def test_foreach_series_with_features(self):
+        """ Sequences are repeated for each item in the 'foreach' series. """
+        assert list(parser.generate_commands(yaml.load("""
+            - foreach: [A,B]
+            - echo test{{A,B}}:
+                depends_on: pre{{A,B}}
+        """))) == [('echo testA', {'depends_on': 'preA'}), ('echo testB', {'depends_on': 'preB'})]
+

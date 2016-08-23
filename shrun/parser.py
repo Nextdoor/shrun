@@ -74,8 +74,10 @@ def _expand_value(value, target_series, index):
                 new_value += value[start:match_start] + items[index]
                 start = match_end
         return new_value + value[start:]
-    else:
+    elif isinstance(value, dict):
         return {k: _expand_value(v, target_series, index) for k, v in value.items()}
+    else:
+        return value
 
 
 class Command(collections.namedtuple('Command', ['command', 'features'])):
