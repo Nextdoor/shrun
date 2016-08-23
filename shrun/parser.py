@@ -97,7 +97,7 @@ class Command(collections.namedtuple('Command', ['command', 'features'])):
         for key in features.keys():
             assert key in KEYWORDS, "Unknown keyword '{}'".format(key)
 
-        return super(Command, cls).__new__(cls, value, features)
+        return super(Command, cls).__new__(cls, value.rstrip('\n'), features)
 
     def expand_series(self, series, index):
         return Command(command=_expand_value(self.command, series, index),

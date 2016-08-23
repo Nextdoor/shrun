@@ -22,7 +22,7 @@ class TestGenerateCommands:
             parse_command({'sleep 1000': {'backgroundish': True}})
 
     def test_badly_formatted_entry(self):
-        """ Check that only valid keywords are used """
+        """ Test that a command object has only one-key """
         with pytest.raises(AssertionError) as exc_info:
             list(parser.generate_commands(yaml.load("""
                 - key1: 1
@@ -30,6 +30,15 @@ class TestGenerateCommands:
                 """)))
         assert "Command has multiple top-level keys: ['key1', 'key2']" in str(exc_info.value)
 
+    def test_removes_trailing_newline_from_complex_keys(self):
+        """ Check that only valid keywords are used """
+        commands = list(parser.generate_commands(yaml.load("""
+            - ? >
+                  Line 1
+                  Line 2
+              : retries: 1
+            """)))
+        assert commands == [('Line 1 Line 2', {'retries': 1})]
 
 class TestSeries:
     def test_simple_series(self):
