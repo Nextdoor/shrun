@@ -112,7 +112,7 @@ class Runner(object):
                 lines = [message] + lines + ['---']
             else:
                 lines = [message + lines[0]]
-            self.print_lines('{}| '.format(prefix), lines, color=color, end='\n')
+            self.print_lines(lines, '{}| '.format(prefix), color=color, end='\n')
 
     @contextlib.contextmanager
     def using_color(self):
