@@ -1,10 +1,12 @@
 from __future__ import print_function
 
+import mock
 import os
 import tempfile
 
 import pytest  # flake8: noqa
 
+import termcolor
 import yaml
 
 from shrun import runner
@@ -195,3 +197,24 @@ def test_foreach(capfd):
     out, err = capfd.readouterr()
     assert "test1" in out
     assert "test2" in out
+
+
+def test_error_during_print(capfd):
+    """ Foreach are indicated when the first entry of a sequence has key 'foreach' """
+    original_cprint = termcolor.cprint
+    calls = []
+
+    # Generate failures for the first 50 attempts
+    def bad_cprint(*args, **kwargs):
+        calls.append(1)
+        if len(calls) < 50:
+            raise IOError
+        original_cprint(*args, **kwargs)
+
+    with mock.patch.object(termcolor, 'cprint', bad_cprint):
+        with mock.patch.object(runner, 'IO_ERROR_RETRY_INTERVAL', 0):  # Speed up test
+            run_command("- echo hello{{1}}")
+
+    assert len(calls) >= 50
+    out, err = capfd.readouterr()
+    assert "hello1" in out

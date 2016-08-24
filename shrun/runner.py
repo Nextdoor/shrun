@@ -21,6 +21,9 @@ from . import parser
 
 COLORS = ['yellow', 'blue', 'red', 'green', 'magenta', 'cyan']
 
+IO_ERROR_RETRY_INTERVAL = 0.1
+IO_ERROR_RETRY_ATTEMPTS = 100
+
 
 def print_exceptions(f):
     """ Exceptions in threads don't show a traceback so this decorator will dump them to stdout """
@@ -81,9 +84,15 @@ class Runner(object):
                 return True
 
     @staticmethod
-    def print_lines(lines, prefix, color):
+    def print_lines(lines, prefix, color, end=''):
         for line in lines:
-            termcolor.cprint(prefix + str(line), color, end='')
+            for _ in range(IO_ERROR_RETRY_ATTEMPTS):
+                try:
+                    termcolor.cprint(prefix + str(line), color, end=end)
+                except IOError:
+                    time.sleep(IO_ERROR_RETRY_INTERVAL)
+                else:
+                    break
 
     @property
     def env(self):
@@ -103,8 +112,7 @@ class Runner(object):
                 lines = [message] + lines + ['---']
             else:
                 lines = [message + lines[0]]
-            for line in lines:
-                termcolor.cprint('{}| {}'.format(prefix, line), color=color)
+            self.print_lines('{}| '.format(prefix), lines, color=color, end='\n')
 
     @contextlib.contextmanager
     def using_color(self):
