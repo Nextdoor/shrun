@@ -255,6 +255,9 @@ class Runner(object):
         # Wait if command is synchronous
         if not (job.background or job.name):
             thread.join()
+            return self._results[-1]
+
+        return True
 
     def finish(self):
         """ Waits for non-background jobs and returns True if all jobs passed"""
@@ -280,7 +283,8 @@ def run_commands(commands, retry_interval=None, shell='/bin/bash', tmpdir=None, 
 
     try:
         for cmd in parser.generate_commands(commands):
-            job_runner.start(cmd, shared_context=shared_context)
+            if not job_runner.start(cmd, shared_context=shared_context):
+                break
 
         return job_runner.finish()
 

@@ -1,12 +1,15 @@
 from __future__ import print_function
 
+import sys
 import threading
 import time
+
+import termcolor
 
 
 class SharedContext(object):
     def __init__(self):
-        self._name_done = {}
+        self._name_result = {}
         self._predicates = {}
         self._done_event = threading.Condition()
 
@@ -14,17 +17,27 @@ class SharedContext(object):
         if not name:
             return
 
-        assert name not in self._name_done, "name '{}' is already in use".format(name)
-        self._name_done[name] = False
+        assert name not in self._name_result, "name '{}' is already in use".format(name)
+        self._name_result[name] = None
 
     def wait_for_dependencies(self, depends_on):
-        while any(not self._name_done[d] for d in depends_on):
+        """ Wait for dependencies to pass
+
+        Args:
+            depends_on: A list of dependency names
+
+        Returns:
+            True when all have passed, False if any have failed
+        """
+
+        while any(self._name_result[d] is None for d in depends_on):
             with self._done_event:
                 self._done_event.wait()
+        return [d for d in depends_on if not self._name_result[d]]
 
-    def mark_as_done(self, name):
+    def mark_as_done(self, name, success):
         if name:
-            self._name_done[name] = True
+            self._name_result[name] = success
             with self._done_event:
                 self._done_event.notify_all()
 
@@ -78,7 +91,12 @@ class Job(object):
 
         start_time = time.time()
 
-        shared_context.wait_for_dependencies(self.tags('depends_on'))
+        failed_dependencies = shared_context.wait_for_dependencies(self.tags('depends_on'))
+        if failed_dependencies:
+            termcolor.cprint("NOT STARTED: The following dependencies failed: {}".format(
+                ', '.join("'{}'".format(f) for f in failed_dependencies)
+            ), 'red', file=sys.stderr)
+            return False
 
         if_preds = self.tags('if')
         unless_preds = self.tags('unless')
@@ -95,9 +113,9 @@ class Job(object):
             background=self.command.features.get('background', False),
             ignore_status=bool(set_predicates),
             retries=self.command.features.get('retries', 0),
-            interval=self.command.features.get('interval', None))
+            interval=self.command.features.get('interval', 1))
 
-        shared_context.mark_as_done(self.name)
+        shared_context.mark_as_done(self.name, passed)
 
         shared_context.set_predicates(passed, set_predicates)
 

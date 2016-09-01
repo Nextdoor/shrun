@@ -30,6 +30,17 @@ def test_runs_commands(capfd):
     assert 'Done' in out
 
 
+def test_commands_stop_after_first_failing_command(capfd):
+    """ No commands are run after the first failing command """
+    run_command("""
+        - echo "Hello" && false
+        - echo "Goodbye"
+    """)
+    out, err = capfd.readouterr()
+    assert 'Hello' in out
+    assert 'Goodbye' not in out
+
+
 def test_handles_keys_in_yaml_as_commands(capfd):
     """ The key is the command """
     run_command("""
@@ -82,6 +93,20 @@ def test_command_in_parallel(capfd, tmpdir_as_cwd):
         """) is True
     out, err = capfd.readouterr()
     assert out.index('Third Done') < out.index('Second Done')
+
+
+def test_commands_stop_if_dependency_failed(capfd):
+    """ Runs commands in parallel with dependencies """
+    run_command("""
+        - echo You will see me && false:
+            name: see-me
+        - echo You wont see me:
+            depends_on: see-me
+        """)
+    out, err = capfd.readouterr()
+    assert "You will see me" in out
+    assert "You wont see me" not in out
+    assert "NOT STARTED: The following dependencies failed: 'see-me'" in err
 
 
 def test_multiple_commands_with_same_name_hits_assertion():
