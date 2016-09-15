@@ -240,7 +240,7 @@ class Runner(object):
 
         thread = InterruptibleThread(
             target=self._run_job, args=(job,),
-            kwargs={'runner': self, 'shared_context': shared_context})
+            kwargs=dict(runner=self, shared_context=shared_context))
         thread.daemon = True  # Ensure this thread doesn't outlive the main thread
 
         # Keep track of all running threads
