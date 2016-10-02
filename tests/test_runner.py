@@ -54,7 +54,8 @@ def test_handles_keys_in_yaml_as_commands(capfd):
 
 def test_exits_with_error_on_failure(capfd):
     """ Reports errors """
-    assert run_command("- echo bad && false") is False
+    results = run_command("- echo bad && false")
+    assert results.failed[0].command == 'echo bad && false'
     out, err = capfd.readouterr()
     assert 'bad' in out
 
@@ -88,24 +89,26 @@ def test_terminated_background_job(capfd, tmpdir_as_cwd):
 
 def test_command_output_timeout(capfd):
     """ Fails if an individual command doesn't output in the timeout """
-    assert run_command("""
-            - "while true; do sleep 1; done":
-                timeout: 0
-            """) is False
+    results = run_command("""
+        - "while true; do sleep 1; done":
+            timeout: 0
+        """)
+    assert results.failed
     out, err = capfd.readouterr()
     assert 'TIMEOUT' in out
 
 
 def test_command_in_parallel(capfd, tmpdir_as_cwd):
     """ Runs commands in parallel with dependencies """
-    assert run_command("""
+    results = run_command("""
         - "while [ ! -f first ]; do touch first; done; echo First Done":
             name: first
         - "[ -f first ] && echo Second Done":
             depends_on: first
             background: true
         - touch first && echo Third Done
-        """) is True
+        """)
+    assert not results.failed
     out, err = capfd.readouterr()
     assert out.index('Third Done') < out.index('Second Done')
 
@@ -145,7 +148,7 @@ def test_predicates(capfd):
             unless: skip_it
         - echo Not skipped $WORD:
             if: skip_it
-        """) is True
+        """) == ([], [], False)
     out, err = capfd.readouterr()
     assert "Yes skipped word" not in out
     assert "Not skipped word" in out
@@ -153,10 +156,12 @@ def test_predicates(capfd):
 
 def test_dont_wait_for_background():
     """ Background jobs are just terminated if they are still running """
-    assert run_command("""
+    failed, running, _ = run_command("""
         - sleep 10000:
             background: true
-        """) is True
+        """)
+    assert not failed
+    assert running
 
 
 def test_invalid_key():
@@ -173,7 +178,7 @@ def test_retries(capfd, tmpdir_as_cwd):
     assert run_command("""
         - "[ -e file ] || { touch file; false; }":
             retries: 1
-        """) is True
+        """) == ([], [], False)
     out, err = capfd.readouterr()
     assert "Retrying" in out
 

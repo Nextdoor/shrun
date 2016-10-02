@@ -75,7 +75,16 @@ def main(argv=sys.argv):
     try:
         if args.timeout is not None:
             timer.start()
-        passed = run(commands)
+        results = run(commands)
+        if results.interrupt:
+            termcolor.cprint("KEYBOARD INTERRUPT", 'red', file=sys.stderr)
+
+        if results.failed:
+            failed_command = results.failed[0]
+        elif results.interrupt and results.running:
+            failed_command = results.running[-1]
+        else:
+            failed_command = None
 
         if isinstance(data, dict):
             post_commands = data.get('post', [])
@@ -86,8 +95,10 @@ def main(argv=sys.argv):
             termcolor.cprint("Running 'post' commands")
             run(post_commands)
 
-        if not passed:
-            sys.exit(termcolor.colored("FAILED", 'red'))
+        if failed_command:
+            sys.exit(termcolor.colored(
+                "FAILED: Failed while running '{}'".format(failed_command.command),
+                'red'))
 
     finally:
         if args.timeout is not None:
