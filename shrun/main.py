@@ -14,6 +14,7 @@ import signal
 import sys
 import tempfile
 import threading
+import traceback
 
 import termcolor
 import yaml
@@ -88,7 +89,11 @@ def main(argv=sys.argv):
 
     finally:
         timer.cancel()
-        shutil.rmtree(tmpdir)
+
+        def show_error(func, path, exc_info):
+            termcolor.cprint("Unable to remove '{}'. Got '{}'".format(
+                path, traceback.format_exception_only(*exc_info[0:2])), file=sys.stderr)
+        shutil.rmtree(tmpdir, onerror=show_error)
 
 if __name__ == "__main__":
     main(sys.argv)

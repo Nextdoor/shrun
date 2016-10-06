@@ -1,6 +1,11 @@
 from __future__ import print_function
 from builtins import str
 
+import mock
+import os
+import shutil
+import stat
+
 import pytest  # flake8: noqa
 
 from shrun import main
@@ -160,3 +165,24 @@ def test_main_and_post_with_keyboard_interrupt(capfd):
     out, err = capfd.readouterr()
     assert "KEYBOARD INTERRUPT" in err
     assert "Ran yes" in out
+
+
+def test_exception_during_cleanup(capfd):
+    """ Report exceptions during cleanup to stderr """
+    original_rmtree = shutil.rmtree
+    delete_paths = []
+
+    def make_directory_unremoveable(path, *args, **kwargs):
+        os.chmod(path, stat.S_IRUSR)  # remove x permission so we can't delete directory
+        delete_paths.append(path)
+        return original_rmtree(path, *args, **kwargs)
+
+    try:
+        with mock.patch.object(main.shutil, 'rmtree', make_directory_unremoveable):
+            run_command("- echo hello")
+        out, err = capfd.readouterr()
+        assert "Unable to remove" in err
+    finally:
+        for path in delete_paths:
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IEXEC)
+            shutil.rmtree(path)
