@@ -71,6 +71,21 @@ def test_runs_job_in_background(capfd, tmpdir_as_cwd):
     assert 'Done' in out
 
 
+def test_terminated_background_job(capfd, tmpdir_as_cwd):
+    """ Reports stopped background jobs as terminated without failing """
+    assert run_command("""
+        - "touch done && sleep 10":
+            background: true
+        - "while [ ! -f done ]; do true; done; echo DONE"
+        """)
+    out, err = capfd.readouterr()
+    assert 'FAILED' not in err
+    assert 'FAILED' not in out
+    assert 'Terminated' in out
+    assert 'DONE' in out
+    assert 'Done' in out
+
+
 def test_command_output_timeout(capfd):
     """ Fails if an individual command doesn't output in the timeout """
     assert run_command("""

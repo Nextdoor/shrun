@@ -70,18 +70,20 @@ class Runner(object):
         self.threads_lock = threading.Lock()
         self.threads = collections.defaultdict(list)
         self._results = []
+        self._finished = False
 
     def kill_all(self):
-        """ Returns true when it is done killing all, otherwise try again """
-        with self.threads_lock:
-            if any(t.isAlive() for t in itertools.chain(*self.threads.values())):
-                self._dead = True
-                with self._procs_lock:
-                    for proc in self._procs:
-                        proc.kill()
-                return False
-            else:
-                return True
+        """ Kills all running threads """
+        self._dead = True
+        while True:  # Keep killing procs until the threads terminate
+            with self.threads_lock:
+                if any(t.isAlive() for t in itertools.chain(*self.threads.values())):
+                    with self._procs_lock:
+                        for proc in self._procs:
+                            proc.kill()
+                    time.sleep(0.1)
+                else:
+                    return True
 
     @staticmethod
     def print_lines(lines, prefix, color, end=''):
@@ -213,6 +215,8 @@ class Runner(object):
         elapsed_time = time.time() - start_time
         if passed:
             message = 'Done'
+        elif self._dead:
+            message = 'Terminated'
         elif ignore_status:
             message = 'Failed'
         else:
@@ -232,7 +236,8 @@ class Runner(object):
 
     @print_exceptions  # Ensure we see thread exceptions
     def _run_job(self, job, **kwargs):
-        self._results.append(job.run(**kwargs))
+        result = job.run(**kwargs)
+        self._results.append(result)
 
     def start(self, cmd, shared_context):
         job = command.Job(command=cmd)
@@ -293,5 +298,4 @@ def run_commands(commands, retry_interval=None, shell='/bin/bash', tmpdir=None, 
         return False
 
     finally:
-        while not job_runner.kill_all():  # Keep killing procs until the threads terminate
-            time.sleep(0.1)
+        job_runner.kill_all()
