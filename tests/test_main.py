@@ -140,7 +140,7 @@ def test_environment(capfd, monkeypatch):
 
 def test_main_and_post(capfd):
     """ Post is executed even if main fails  """
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exc_info:
         run_command("""
             main:
                 - "false"
@@ -149,6 +149,7 @@ def test_main_and_post(capfd):
             """)
     out, err = capfd.readouterr()
     assert "Ran yes" in out
+    assert "Failed while running 'false'" in str(exc_info.value)
 
 
 def test_main_and_post_with_keyboard_interrupt(capfd):

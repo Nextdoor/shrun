@@ -7,8 +7,8 @@ import itertools
 import io
 import os
 import re
+import six
 import subprocess
-import sys
 import threading
 import tempfile
 import time
@@ -23,6 +23,8 @@ COLORS = ['yellow', 'blue', 'red', 'green', 'magenta', 'cyan']
 
 IO_ERROR_RETRY_INTERVAL = 0.1
 IO_ERROR_RETRY_ATTEMPTS = 100
+
+RunnerResults = collections.namedtuple('RunnerResults', ('failed', 'running', 'interrupt'))
 
 
 def print_exceptions(f):
@@ -69,8 +71,7 @@ class Runner(object):
         self._dead = False
         self.threads_lock = threading.Lock()
         self.threads = collections.defaultdict(list)
-        self._results = []
-        self._finished = False
+        self._results = {}
 
     def kill_all(self):
         """ Kills all running threads """
@@ -235,17 +236,27 @@ class Runner(object):
             return self._run(*args, color=color, **kwargs)
 
     @print_exceptions  # Ensure we see thread exceptions
-    def _run_job(self, job, **kwargs):
-        result = job.run(**kwargs)
-        self._results.append(result)
+    def _run_job(self, job, job_id, **kwargs):
+        passed = job.run(**kwargs)
+        self._results[job_id] = passed
 
-    def start(self, cmd, shared_context):
+    def start(self, cmd, job_id, shared_context):
+        """ Start a job.
+
+        Returns:
+            A tuple: (Job ID, True/False/None = Success/Failure/Background)
+        """
+        self._results[job_id] = None
+
         job = command.Job(command=cmd)
         job.synchronous_prepare(shared_context)
 
         thread = InterruptibleThread(
-            target=self._run_job, args=(job,),
-            kwargs=dict(runner=self, shared_context=shared_context))
+            target=self._run_job,
+            kwargs=dict(runner=self,
+                        job=job,
+                        job_id=job_id,
+                        shared_context=shared_context))
         thread.daemon = True  # Ensure this thread doesn't outlive the main thread
 
         # Keep track of all running threads
@@ -260,42 +271,77 @@ class Runner(object):
         # Wait if command is synchronous
         if not (job.background or job.name):
             thread.join()
-            return self._results[-1]
 
-        return True
+        return self._results.get(job_id)
 
     def finish(self):
-        """ Waits for non-background jobs and returns True if all jobs passed"""
+        """ Waits for non-background jobs. """
 
         # Wait for all the non-background threads to complete
         for t in self.threads['normal']:
             t.join()
 
-        return all(self._results)
+    def failures(self):
+        """ Returns failed jobs """
+
+        return [id for id, result in six.iteritems(self._results) if result is False]
+
+    def running(self):
+        """ Returns jobs that are still running jobs """
+
+        return [id for id, result in six.iteritems(self._results) if result is None]
 
 
 def run_commands(commands, retry_interval=None, shell='/bin/bash', tmpdir=None, output_timeout=None,
                  environment={}):
+    """
+
+    Args:
+        commands: A list of commands
+        retry_interval: Time between retries in seconds
+        shell: Choice of shell
+        tmpdir: temporary directory to store output logs
+        output_timeout: Fail command if it takes longer than this number of seconds
+        environment: Environment variables to use during command run
+
+    Returns:
+        RunnerResults (a tuple):
+            A list of failed commands.
+            A list of commands that are still running.
+    """
     tmpdir = tmpdir or tempfile.gettempdir()
 
-    assert type(commands) == list, \
-        "Expected command list to be a list but got {}".format(type(commands))
+    assert type(commands) == list, (
+        "Expected command list to be a list but got {}".format(type(commands)))
 
     job_runner = Runner(tmpdir=tmpdir, retry_interval=retry_interval, shell=shell,
                         environment=environment, output_timeout=output_timeout)
 
     shared_context = command.SharedContext()
 
+    started_commands = {}
+
+    def results(interrupt=False):
+        return RunnerResults(
+            failed=[started_commands[id] for id in job_runner.failures()],
+            running=[started_commands[id] for id in job_runner.running()],
+            interrupt=interrupt)
+
+    job_id_counter = itertools.count()
+
     try:
         for cmd in parser.generate_commands(commands):
-            if not job_runner.start(cmd, shared_context=shared_context):
+            job_id = next(job_id_counter)
+            started_commands[job_id] = cmd
+            result = job_runner.start(cmd, job_id=job_id, shared_context=shared_context)
+            if result is False:
                 break
 
-        return job_runner.finish()
+        job_runner.finish()
+        return results()
 
     except KeyboardInterrupt:
-        termcolor.cprint("KEYBOARD INTERRUPT", 'red', file=sys.stderr)
-        return False
+        return results(interrupt=True)
 
     finally:
         job_runner.kill_all()
