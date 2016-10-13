@@ -29,7 +29,7 @@ def main(argv=sys.argv):
     parser.add_argument('--version', action='store_true', default=False)
     parser.add_argument('--verbose', '-v', action='store_true', default=True)
     parser.add_argument('--shell', default='/bin/bash')
-    parser.add_argument('--timeout', default=300, type=int, help="Seconds for the entire run.")
+    parser.add_argument('--timeout', type=int, help="Seconds for the entire run.")
     parser.add_argument('--retry_interval', default=1, type=int, help="Seconds between retries.")
     parser.add_argument('--output-timeout', default=300, type=int, dest='output_timeout',
                         help="Timeout for any background job not generating output.")
@@ -65,14 +65,16 @@ def main(argv=sys.argv):
 
     signal.signal(signal.SIGTERM, terminate)
 
-    timer = threading.Timer(args.timeout, timeout_handler)
+    if args.timeout is not None:
+        timer = threading.Timer(args.timeout, timeout_handler)
 
     run = functools.partial(
         runner.run_commands, shell=args.shell, retry_interval=args.retry_interval, tmpdir=tmpdir,
         environment=environment, output_timeout=args.output_timeout)
 
     try:
-        timer.start()
+        if args.timeout is not None:
+            timer.start()
         passed = run(commands)
 
         if isinstance(data, dict):
@@ -88,7 +90,8 @@ def main(argv=sys.argv):
             sys.exit(termcolor.colored("FAILED", 'red'))
 
     finally:
-        timer.cancel()
+        if args.timeout is not None:
+            timer.cancel()
 
         def show_error(func, path, exc_info):
             termcolor.cprint("Unable to remove '{}'. Got '{}'".format(
