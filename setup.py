@@ -6,8 +6,8 @@ setup(
     name='shrun',
     version=VERSION,
     description='shrun yaml-based runner',
-    author='Dev Tools Team',
-    author_email='asbrown@nextdoor.com',
+    author='Nextdoor Engineering',
+    author_email='eng@nextdoor.com',
     packages=find_packages(exclude=['ez_setup']),
     scripts=['bin/shrun'],
     test_suite='tests',
@@ -21,5 +21,5 @@ setup(
     tests_require=[
         'pytest',
     ],
-    url='https://https://git.corp.nextdoor.com/Nextdoor/nd-shrun'
+    url='https://github.com/Nextdoor/shrun'
 )
