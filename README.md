@@ -6,7 +6,7 @@ Yaml test flow runner
 
 ## Usage
 
-Run commands shrun <file>.  Inspired by CircleCi's circle.yml files.
+Run a series of commands by typing `shrun <yaml file>`.  Inspired by CircleCi's circle.yml files.
 
 ## Format
 
