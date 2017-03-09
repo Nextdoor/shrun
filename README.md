@@ -1,5 +1,7 @@
 # shrun
 
+[![CircleCI](https://circleci.com/gh/Nextdoor/shrun.svg?style=svg)](https://circleci.com/gh/Nextdoor/shrun)
+
 Yaml test flow runner
 
 ## Usage
