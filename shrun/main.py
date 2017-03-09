@@ -109,5 +109,6 @@ def main(argv=sys.argv):
                 path, traceback.format_exception_only(*exc_info[0:2])), file=sys.stderr)
         shutil.rmtree(tmpdir, onerror=show_error)
 
+
 if __name__ == "__main__":
     main(sys.argv)
