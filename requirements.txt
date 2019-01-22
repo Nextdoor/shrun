@@ -2,6 +2,6 @@ future
 flake8
 mock
 pytest
-pyyaml==3.11
+pyyaml==4.2b4
 termcolor==1.1.0
 tox
